@@ -132,7 +132,9 @@ Notation " A += B " := (concat A B) (at level 60).
 
 Check "ana" += "maria".
 
-Inductive pointer :=
+(* pointers and references*)
+
+Inductive pointer := 
 | nullptr : pointer
 | ptr : string -> pointer
 | ref : string -> pointer.
@@ -144,11 +146,21 @@ Notation "&& A" := (ref A )(at level 20).
 Check "a"**.
 Check &&"a".
 
+(*Arrays*)
+
+Inductive ArrayExp :=
+| arrvar : string -> ArrayExp
+| arrElemenet : Value -> ArrayExp
+| elementAt : string -> nat -> ArrayExp
+| first : string -> ArrayExp
+| last : string -> ArrayExp.
+
+Notation " s [[' i ']] " := (elementAt s i)(at level 22).
+Check "a"[['1']].
+
 (*Statements*)
 Require Import Coq.Lists.List.
 Import ListNotations.
-
-
 
 Inductive Stmt :=
 | nat_decl : string -> AExp -> Stmt
@@ -175,16 +187,7 @@ with cases  :=
 | defaultcase: Stmt->cases
 with Members :=
 | member : Type -> string -> Value -> Members.
-(* ^ only one list in switch???*)
 
-(* OR *)(* 
-Inductive cases :=
-| case : AExp -> Stmt -> cases
-| defaultCase : Stmt -> cases.
-
-Inductive switch :=
-| switchCase: AExp -> list cases -> switch.
- *)
 
 Notation "A [[ B ]]" := (array_decl  A B) (at level 58).
 Notation "S1 ;; S2" := (sequence S1 S2) (at level 98).
@@ -213,58 +216,11 @@ Check switch (avar "a")
     [case (5) ("a" :n= 4);
      defaultcase ("a" :n= 0)].
 
-(*Arrays*)
-
-(* ++declare arrays??? *)
-Definition Array:= nat -> Value.
-
-Definition array0 : Array :=
-  fun x =>
-    if (Nat.eqb x 0)
-    then nat_value 10
-    else  nat_value 0.
-
-Compute array0 0.
-Compute array0 1.
-
-Inductive ArrayOp :=
-| Alength : Array -> ArrayOp
-| push: Array -> Value -> ArrayOp
-| delete: Array -> nat -> ArrayOp
-| pop: Array -> ArrayOp.
-
-Check Alength array0.
-
 
 (* Struct *)
 Compute struct [member nat "a" default].
 Compute struct [member bool "b" (bool_value true); 
                 member nat "x" (default)].
-
-
-(* Inductive Var :=
-| defaultV
-| naturalv : string ->nat->Var.
-
-Inductive memberList:=
-| nill
-| member (t:Type) (v:Var).
-
-(* Inductive struct:= 
-|members: string -> memberList->struct.
- *)
-Definition struct := string->memberList.
-Definition struct1 (s:string) ()  : struct :=
-    
-
-Definition Env := Var -> nat.
-Definition env1 : Env :=
-  fun x =>
-    if (Var_eq_dec x n)
-    then 10
-    else if (Var_eq_dec x x)
-    then 15
-    else 0. *)
 
 
 Inductive Mem :=
@@ -340,22 +296,3 @@ Check "n" :n= 10 ;;
             "s" :n= "s" +' 1 ;;
             "i" :n= "i" +' 1
       ).
-
-(* Definition update_conf (c:config) (n:nat) (env:Env) : config :=
-   Pay attention!!! In order to be able to monitor the state of the entire program, you need to
-   implement a function "update_conf", which updates the 
-   entire configuration (environment, memory layout and stack).  
-   config : nat -> Env -> MemLayer -> Stack -> Config (the first value represents the last memory zone, 
-   and you will need to find a way to increment it each time a new variable/function is declared)
-*)
-
-(* Functions / global/local variables *)
-(*
-  - Restructurare program: declaratii de variabile / declaratii de functii
-  - In Stmt trebuie adaugat si apelul de functii (care este sintaxa?)
-  - Liste de argumente pentru functii: List type.
-  - Atentie la sintaxa!!!
-  - Referinte/pointeri: lucrul cu zona de memorie
-  - Vectori: de asigurat ca se pot pastra n zone de memorie in functie de dimensiunea vectorului.
-*)
-
