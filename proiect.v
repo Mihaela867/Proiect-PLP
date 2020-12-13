@@ -129,7 +129,6 @@ Inductive StringExp :=
 
 Coercion svar: string >->StringExp.
 Notation " A += B " := (concat A B) (at level 60).
-
 Check "ana" += "maria".
 
 (* pointers and references*)
@@ -149,11 +148,12 @@ Check &&"a".
 (*Arrays*)
 
 Inductive ArrayExp :=
-| arrvar : string -> ArrayExp
-| arrElemenet : Value -> ArrayExp
+| arrvar : string -> list Value -> ArrayExp
+| arrElement : Value -> ArrayExp
 | elementAt : string -> nat -> ArrayExp
 | first : string -> ArrayExp
-| last : string -> ArrayExp.
+| last : string -> ArrayExp
+| deleteAt : string -> nat -> ArrayExp.
 
 Notation " s [[' i ']] " := (elementAt s i)(at level 22).
 Check "a"[['1']].
@@ -167,13 +167,15 @@ Inductive Stmt :=
 | bool_decl : string -> BExp -> Stmt
 | string_decl : string -> StringExp -> Stmt
 | array_decl :  string -> nat -> Stmt
-| pointer_decl : Set -> string -> pointer -> Stmt
-| reference_decl : Set -> string -> string -> Stmt
+| array_decl_lists : string -> nat -> list Value -> Stmt
+| pointer_decl : Type -> string -> pointer -> Stmt
+| reference_decl : Type -> string -> string -> Stmt
 | nat_assign : string -> AExp -> Stmt
 | bool_assign : string -> BExp -> Stmt
 | string_assign : string -> StringExp -> Stmt
 | pointer_assign : string -> pointer -> Stmt
 | reference_assign : string -> string -> Stmt
+| array_elm_assign : ArrayExp -> Value -> Stmt
 | sequence : Stmt -> Stmt -> Stmt
 | ifthen : BExp -> Stmt -> Stmt
 | ifthenelse : BExp -> Stmt -> Stmt -> Stmt
@@ -189,7 +191,6 @@ with Members :=
 | member : Type -> string -> Value -> Members.
 
 
-Notation "A [[ B ]]" := (array_decl  A B) (at level 58).
 Notation "S1 ;; S2" := (sequence S1 S2) (at level 98).
 Notation "'If' B 'Then' S1 'Else' S2 'End'" := (ifthenelse B S1 S2) (at level 97).
 Notation "X :n= A" := (nat_assign X A)(at level 90).
@@ -198,12 +199,17 @@ Notation "X :s= A" := (string_assign X A)(at level 90).
 Notation "'Nat'' X ::= A" := (nat_decl X A)(at level 90).
 Notation "'Bool' X ::= A" := (bool_decl X A)(at level 90).
 Notation "'Stringg' X ::= A" := (string_decl X A)(at level 92).
+Notation "A [[ B ]]" := (array_decl  A B) (at level 58).
+Notation "A [[[ B ]]] :l= C" := (array_decl_lists A B C) (at level 58).
+Notation " A :a= B " := (array_elm_assign A B) (at level 58).
 Notation "F  {{ A }}  " :=  (functionCall F A)(at level 88).
 
 Check pointer_decl nat "a" nullptr.
 Check pointer_decl nat "a" ("b" **).
 Check pointer_decl nat "a" (&& "b").
-Check  "a"[[10]].
+Check "a" [['1']] :a= nat_value 2.
+Check "a" [[[ 100 ]]] :l= [nat_value 1; nat_value 5].
+Check "a"[[10]].
 Check "a" :n= 0.
 Check Nat' "a" ::= 0.
 Check Stringg "a" ::=  "ana".
