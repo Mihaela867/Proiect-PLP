@@ -115,6 +115,12 @@ Inductive Stmt :=
 | bool_decl : string -> BExp -> Stmt
 | string_decl : string -> StringExp -> Stmt
 | array_decl :  string -> nat -> Stmt
+| array_decl_list_nat : string -> nat ->list nat -> Stmt
+| array_decl_list_bool : string -> nat -> list bool -> Stmt
+| array_decl_list_string : string -> nat -> list string -> Stmt
+| pointer_decl_nat : string -> pointer -> Stmt
+| pointer_decl_bool: string -> pointer -> Stmt
+| reference_decl : string -> string -> Stmt
 | nat_assign : string -> AExp -> Stmt
 | bool_assign : string -> BExp -> Stmt
 | string_assign : string -> StringExp -> Stmt
@@ -144,15 +150,16 @@ Notation "'Nat'' X ::= A" := (nat_decl X A)(at level 90).
 Notation "'Bool' X ::= A" := (bool_decl X A)(at level 90).
 Notation "'Stringg' X ::= A" := (string_decl X A)(at level 92).
 Notation "A [[ B ]]" := (array_decl  A B) (at level 58).
-(* Notation "A [[[ B ]]] :l= C" := (array_decl_lists A B C) (at level 58). *)
+Notation "A [[[ B ]]] :ln= C" := (array_decl_list_nat A B C) (at level 58). 
+Notation "A [[[ B ]]] :lb= C" := (array_decl_list_bool A B C) (at level 58). 
+Notation "A [[[ B ]]] :ls= C" := (array_decl_list_string A B C) (at level 58). 
 Notation " A :an= B " := (array_elm_assign_nat A B) (at level 58).
 Notation " A :ab= B " := (array_elm_assign_bool A B) (at level 58).
 Notation " A :as= B " := (array_elm_assign_string A B) (at level 58).
 Notation "F  {{ A }}  " :=  (functionCall F A)(at level 88).
-
-(* (* Check poin(* ter_decl nat "a" nullptr. *)
-Check pointer_decl nat "a" ("b" **).
-Check pointer_decl nat "a" (&& "b"). *) *
+Check pointer_decl_nat "a" nullptr. 
+Check pointer_decl_nat "a" ("b" **).
+Check pointer_decl_nat "a" (&& "b"). 
 Check "a" [['1']] :an= 2.
 Check "a"[[10]].
 Check "a" :n= 0.
@@ -161,7 +168,7 @@ Check Stringg "a" ::=  "ana".
 Check ifthen (3<'2) ("a" :n= 3).
 Check 1+'2.
 Check "func" {{["a"]}}.
-
+Check "v" [[[10]]] :ln= [1;2;3].
 Check switch (1+'2) [ defaultcase ("a" :n= 5)].
 Check switch (avar "a")
     [case (5) ("a" :n= 4);
