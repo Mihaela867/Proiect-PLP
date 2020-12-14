@@ -20,66 +20,8 @@ Inductive ErrorString :=
 Coercion num: nat >-> ErrorNat.
 Coercion boolean: bool >-> ErrorBool.
 Coercion String : string >-> ErrorString.
+Scheme Equality for ErrorBool.
 
-Inductive Value:=
-| undeclared : Value
-| default : Value
-| err_assign : Value
-| nat_value : ErrorNat -> Value
-| bool_value : ErrorBool -> Value
-| string_value : ErrorString -> Value.
-
-
-Scheme Equality for Value.
-
-(* Definition Env := string -> Value.
-Definition env : Env := fun x => undeclared. *)
-
-
-Definition check_eq_over_types (t1 : Value) (t2 : Value) : bool :=
-  match t1 with
-    | undeclared => match t2 with 
-                     | undeclared => true
-                     | _ => false
-                     end
-    | default => match t2 with 
-                  | default => true
-                  | _ => false
-                  end
-    | err_assign => match t2 with 
-                  | err_assign => true
-                  | _ => false
-                  end
-    | nat_value _x => match t2 with
-                  | nat_value _x => true
-                  | _ => false
-                  end
-    | bool_value _x => match t2 with 
-                  | bool_value _x => true
-                  | _ => false
-                  end
-    | string_value  _x => match t2 with
-                  | string_value _x => true
-                  | _ => false
-                  end
-  end.
-
-(* Definition update (env : Env) (x : string) (v : Value) : Env :=
-  fun y =>
-    if (eqb y x)
-    then
-       if(andb (check_eq_over_types undeclared (env y)) (negb (check_eq_over_types default v)))
-       then undeclared
-       else if((check_eq_over_types undeclared (env y)))
-            then default
-            else if(orb (check_eq_over_types default (env y)) (check_eq_over_types v (env y)))
-                 then v
-                  else err_assign
-    else (env y). *)
-
-(*  Notation "S [ V /' X ]" := (update S X V) (at level 20). *)
-
-(* Definition Memory := nat -> Value. *)
 (* Arithmetic expressions *)
 
  Inductive AExp :=
@@ -117,19 +59,25 @@ Notation "! A" := (bnot A)(at level 50).
 Infix "and'" := band (at level 80).
 Infix "or'" := bor (at level 80).
 
-
 (* String operations*)
 
-Inductive StringExp :=
+ Inductive StringExp :=
 | svar : string -> StringExp
 | sstring : ErrorString -> StringExp
 | concat: ErrorString -> ErrorString -> StringExp
 | compare: ErrorString -> ErrorString -> StringExp
-| Slength: ErrorString -> StringExp.
+| slength: ErrorString -> StringExp
+| substring: ErrorString -> ErrorString -> StringExp.
 
 Coercion svar: string >->StringExp.
 Notation " A += B " := (concat A B) (at level 60).
+Notation " A ?= B" := (compare A B) (at level 60).
+Notation "len( A )" := (slength A)(at level 50).
+Notation "A /in B" := (substring A B)(at level 55).
 Check "ana" += "maria".
+Check "ana"?="Ana".
+Check len("mama").
+Check "in" /in "mina".
 
 (* pointers and references*)
 
@@ -137,6 +85,7 @@ Inductive pointer :=
 | nullptr : pointer
 | ptr : string -> pointer
 | ref : string -> pointer.
+Scheme Equality for pointer.
 
 (* in C un pointer poate fi asignat/declarat doar cu trei tipuri de valori: un alt pointer, referinta unei variabile
 sau NULL*)
@@ -148,8 +97,6 @@ Check &&"a".
 (*Arrays*)
 
 Inductive ArrayExp :=
-| arrvar : string -> list Value -> ArrayExp
-| arrElement : Value -> ArrayExp
 | elementAt : string -> nat -> ArrayExp
 | first : string -> ArrayExp
 | last : string -> ArrayExp
@@ -161,21 +108,21 @@ Check "a"[['1']].
 (*Statements*)
 Require Import Coq.Lists.List.
 Import ListNotations.
+Scheme Equality for list.
 
 Inductive Stmt :=
 | nat_decl : string -> AExp -> Stmt
 | bool_decl : string -> BExp -> Stmt
 | string_decl : string -> StringExp -> Stmt
 | array_decl :  string -> nat -> Stmt
-| array_decl_lists : string -> nat -> list Value -> Stmt
-| pointer_decl : Type -> string -> pointer -> Stmt
-| reference_decl : Type -> string -> string -> Stmt
 | nat_assign : string -> AExp -> Stmt
 | bool_assign : string -> BExp -> Stmt
 | string_assign : string -> StringExp -> Stmt
 | pointer_assign : string -> pointer -> Stmt
 | reference_assign : string -> string -> Stmt
-| array_elm_assign : ArrayExp -> Value -> Stmt
+| array_elm_assign_nat : ArrayExp -> ErrorNat -> Stmt
+| array_elm_assign_bool : ArrayExp -> ErrorBool -> Stmt
+| array_elm_assign_string : ArrayExp -> ErrorString -> Stmt
 | sequence : Stmt -> Stmt -> Stmt
 | ifthen : BExp -> Stmt -> Stmt
 | ifthenelse : BExp -> Stmt -> Stmt -> Stmt
@@ -183,12 +130,9 @@ Inductive Stmt :=
 | For : Stmt -> BExp -> Stmt -> Stmt->Stmt
 | switch : AExp -> list cases -> Stmt
 | functionCall: string -> list string -> Stmt
-| struct : list Members -> Stmt
 with cases  :=
 | case : AExp -> Stmt -> cases
-| defaultcase: Stmt->cases
-with Members :=
-| member : Type -> string -> Value -> Members.
+| defaultcase: Stmt->cases.
 
 
 Notation "S1 ;; S2" := (sequence S1 S2) (at level 98).
@@ -200,15 +144,16 @@ Notation "'Nat'' X ::= A" := (nat_decl X A)(at level 90).
 Notation "'Bool' X ::= A" := (bool_decl X A)(at level 90).
 Notation "'Stringg' X ::= A" := (string_decl X A)(at level 92).
 Notation "A [[ B ]]" := (array_decl  A B) (at level 58).
-Notation "A [[[ B ]]] :l= C" := (array_decl_lists A B C) (at level 58).
-Notation " A :a= B " := (array_elm_assign A B) (at level 58).
+(* Notation "A [[[ B ]]] :l= C" := (array_decl_lists A B C) (at level 58). *)
+Notation " A :an= B " := (array_elm_assign_nat A B) (at level 58).
+Notation " A :ab= B " := (array_elm_assign_bool A B) (at level 58).
+Notation " A :as= B " := (array_elm_assign_string A B) (at level 58).
 Notation "F  {{ A }}  " :=  (functionCall F A)(at level 88).
 
-Check pointer_decl nat "a" nullptr.
+(* (* Check poin(* ter_decl nat "a" nullptr. *)
 Check pointer_decl nat "a" ("b" **).
-Check pointer_decl nat "a" (&& "b").
-Check "a" [['1']] :a= nat_value 2.
-Check "a" [[[ 100 ]]] :l= [nat_value 1; nat_value 5].
+Check pointer_decl nat "a" (&& "b"). *) *
+Check "a" [['1']] :an= 2.
 Check "a"[[10]].
 Check "a" :n= 0.
 Check Nat' "a" ::= 0.
@@ -223,12 +168,92 @@ Check switch (avar "a")
      defaultcase ("a" :n= 0)].
 
 
+Inductive Value:=
+| undeclared : Value
+| default : Value
+| err_assign : Value
+| nat_value : ErrorNat -> Value
+| bool_value : ErrorBool -> Value
+| string_value : ErrorString -> Value
+| code : Stmt -> Value.
+
 (* Struct *)
-Compute struct [member nat "a" default].
-Compute struct [member bool "b" (bool_value true); 
-                member nat "x" (default)].
+Inductive Members :=
+| member: string -> Value -> Members.
+
+Inductive Struct :=
+| struct : string -> list Members -> Struct.
 
 
+Compute struct "s1" [member "a" default].
+Compute struct "s2" [member "b" (bool_value true); 
+                member "x" (default)].
+
+
+Check "n" :n= 10 ;;
+      "ok" :b= btrue ;;
+      "i" :n= 0 ;;
+      "msg" :s= "Hello" ;;
+      "var" :s= ("ana" += "maria");;
+      "func" {{["a"]}};;
+      switch (avar "a")
+     [case (5) ("a" :n= 4);
+     defaultcase ("a" :n= 0)];;
+      while ("i" <' "n" +' 1) (
+            "s" :n= "s" +' 1 ;;
+            "i" :n= "i" +' 1
+      ).
+
+
+
+Definition check_eq_over_types (t1 : Value) (t2 : Value) : bool :=
+  match t1 with
+    | undeclared => match t2 with 
+                     | undeclared => true
+                     | _ => false
+                     end
+    | default => match t2 with 
+                  | default => true
+                  | _ => false
+                  end
+    | err_assign => match t2 with 
+                  | err_assign => true
+                  | _ => false
+                  end
+    | nat_value _x => match t2 with
+                  | nat_value _x => true
+                  | _ => false
+                  end
+    | bool_value _x => match t2 with 
+                  | bool_value _x => true
+                  | _ => false
+                  end
+    | string_value  _x => match t2 with
+                  | string_value _x => true
+                  | _ => false
+                  end
+    | code _x => match t2 with
+                  | code _x => true
+                  | _ => false
+                 end
+  end. 
+
+(*  Definition update (env : Env) (x : string) (v : Value) : Env :=
+  fun y =>
+    if (eqb y x)
+    then
+       if(andb (check_eq_over_types undeclared (env y)) (negb (check_eq_over_types default v)))
+       then undeclared
+       else if((check_eq_over_types undeclared (env y)))
+            then default
+            else if(orb (check_eq_over_types default (env y)) (check_eq_over_types v (env y)))
+                 then v
+                  else err_assign
+    else (env y).  *)
+
+(*  Notation "S [ V /' X ]" := (update S X V) (at level 20). *)
+
+(* Definition Memory := nat -> Value. *)
 Inductive Mem :=
   | mem_default : Mem
   | offset : nat -> Mem. (* offset which indicates the current number of memory zones *)
@@ -287,18 +312,3 @@ Definition update_mem (mem : MemLayer) (env : Env) (x : string) (type : Mem) (v 
       else (mem y).
 (* Each variable/function name is initially mapped to undeclared *)
 Definition mem : MemLayer := fun x => undeclared.
-
-Check "n" :n= 10 ;;
-      "ok" :b= btrue ;;
-      "i" :n= 0 ;;
-      "msg" :s= "Hello" ;;
-      struct [member bool "b" (bool_value true); 
-                member nat "x" (default)];;
-      "func" {{["a"]}};;
-      switch (avar "a")
-     [case (5) ("a" :n= 4);
-     defaultcase ("a" :n= 0)];;
-      while ("i" <' "n" +' 1) (
-            "s" :n= "s" +' 1 ;;
-            "i" :n= "i" +' 1
-      ).
