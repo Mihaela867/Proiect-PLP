@@ -1,4 +1,7 @@
+(*SYNTAX*)
+
 (*Variables and environment*)
+
 Require Import Strings.String.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
@@ -20,7 +23,7 @@ Inductive ErrorString :=
 Coercion num: nat >-> ErrorNat.
 Coercion boolean: bool >-> ErrorBool.
 Coercion String : string >-> ErrorString.
-Scheme Equality for ErrorBool.
+
 
 (* Arithmetic expressions *)
 
@@ -36,17 +39,19 @@ Scheme Equality for ErrorBool.
 
 Coercion avar : string >-> AExp.
 Coercion anum : ErrorNat >-> AExp.
-Notation "A +' B" := (aplus A B) (at level 48, right associativity).
-Notation "A -' B" := (amin A B) (at level 48, right associativity).
-Notation "A *' B" := (amul A B) (at level 38, left associativity).
-Notation "A \' B" := (adiv A B) (at level 38, left associativity).
-Notation "A %' B" := (amod A B) (at level 37, left associativity).
+Notation "A +' B" := (aplus A B)(at level 50, left associativity).
+Notation "A -' B" := (amin A B)(at level 50, left associativity).
+Notation "A *' B" := (amul A B)(at level 48, left associativity).
+Notation "A /' B" := (adiv A B)(at level 48, left associativity).
+Notation "A %' B" := (amod A B)(at level 45, left associativity).
 
 (* Boolean expressions *)
 
 Inductive BExp :=
+| berror: BExp
 | btrue : BExp
 | bfalse : BExp
+| bvar : string -> BExp
 | bnot : BExp -> BExp
 | band : BExp -> BExp -> BExp
 | bor : BExp -> BExp -> BExp
@@ -55,7 +60,7 @@ Inductive BExp :=
 
 Notation "A <' B" := (blessthan A B) (at level 72).
 Notation "A >' B" := (bgreaterthan A B) (at level 70).
-Notation "! A" := (bnot A)(at level 50).
+Notation "!' A" := (bnot A)(at level 50).
 Infix "and'" := band (at level 80).
 Infix "or'" := bor (at level 80).
 
@@ -64,20 +69,20 @@ Infix "or'" := bor (at level 80).
  Inductive StringExp :=
 | svar : string -> StringExp
 | sstring : ErrorString -> StringExp
-| concat: ErrorString -> ErrorString -> StringExp
-| compare: ErrorString -> ErrorString -> StringExp
-| slength: ErrorString -> StringExp
-| substring: ErrorString -> ErrorString -> StringExp.
+| strcat: StringExp -> StringExp -> StringExp
+| areEqual: StringExp -> StringExp -> StringExp.
+(* | slength: ErrorString -> StringExp *)
+(* | substring: StringExp -> AExp -> AExp -> StringExp. *)
 
 Coercion svar: string >->StringExp.
-Notation " A += B " := (concat A B) (at level 60).
-Notation " A ?= B" := (compare A B) (at level 60).
-Notation "len( A )" := (slength A)(at level 50).
+(* Notation " A += B " := (concat A B) (at level 60). *)
+(* Notation " A ?= B" := (compare A B) (at level 60). *)
+(* Notation "len( A )" := (slength A)(at level 50). *)
 Notation "A /in B" := (substring A B)(at level 55).
-Check "ana" += "maria".
-Check "ana"?="Ana".
-Check len("mama").
-Check "in" /in "mina".
+(* (* Check "ana" += "maria". *)
+(* Check "ana"?="Ana". *)
+(* Check len("mama"). *)
+Check "in" /in "mina". *)
 
 (* pointers and references*)
 
@@ -201,7 +206,7 @@ Check "n" :n= 10 ;;
       "ok" :b= btrue ;;
       "i" :n= 0 ;;
       "msg" :s= "Hello" ;;
-      "var" :s= ("ana" += "maria");;
+
       "func" {{["a"]}};;
       switch (avar "a")
      [case (5) ("a" :n= 4);
@@ -212,6 +217,7 @@ Check "n" :n= 10 ;;
       ).
 
 
+(*SEMANTICS*)
 
 Definition check_eq_over_types (t1 : Value) (t2 : Value) : bool :=
   match t1 with
@@ -245,22 +251,6 @@ Definition check_eq_over_types (t1 : Value) (t2 : Value) : bool :=
                  end
   end. 
 
-(*  Definition update (env : Env) (x : string) (v : Value) : Env :=
-  fun y =>
-    if (eqb y x)
-    then
-       if(andb (check_eq_over_types undeclared (env y)) (negb (check_eq_over_types default v)))
-       then undeclared
-       else if((check_eq_over_types undeclared (env y)))
-            then default
-            else if(orb (check_eq_over_types default (env y)) (check_eq_over_types v (env y)))
-                 then v
-                  else err_assign
-    else (env y).  *)
-
-(*  Notation "S [ V /' X ]" := (update S X V) (at level 20). *)
-
-(* Definition Memory := nat -> Value. *)
 Inductive Mem :=
   | mem_default : Mem
   | offset : nat -> Mem. (* offset which indicates the current number of memory zones *)
@@ -272,6 +262,10 @@ Definition Env := string -> Mem.
 
 (* Memory Layer *)
 Definition MemLayer := Mem -> Value.
+
+(*  Notation "S [ V /' X ]" := (update S X V) (at level 20). *)
+
+(* Definition Memory := nat -> Value. *)
 
 (* Stack *)
 Definition Stack := list Env.
@@ -296,10 +290,15 @@ Definition update_env (env: Env) (x: string) (n: Mem) : Env :=
       else
         (env y).
 
+Notation "S [ V /e X ]" := (update_env S X V) (at level 10). 
+
 Definition env : Env := fun x => mem_default.
+Definition mem : MemLayer := fun x => undeclared.
 
 (* Initially each variable is assigned to a default memory zone *)
 Compute (env "z"). (* The variable is not yet declared *)
+Compute mem (env "z").
+Compute mem (offset 0).
 
 (* Example of updating the environment, based on a specific memory offset *)
 Compute (update_env env "x" (offset 9)) "x".
@@ -311,11 +310,245 @@ Definition update_mem (mem : MemLayer) (env : Env) (x : string) (type : Mem) (v 
       then
         if(andb(check_eq_over_types undeclared (mem y)) (negb(check_eq_over_types default v)))
         then undeclared
-        else if (check_eq_over_types undeclared (mem y))
+        else if (andb (check_eq_over_types undeclared (mem y)) (check_eq_over_types default v))
             then default
             else if(orb(check_eq_over_types default (mem y)) (check_eq_over_types v (mem y)))
                  then v
                  else err_assign
       else (mem y).
-(* Each variable/function name is initially mapped to undeclared *)
-Definition mem : MemLayer := fun x => undeclared.
+Notation "S { V /m X } \ M \ T" := (update_mem M S V T X)(at level 10).
+Check env [ (offset 4) /e "a" ].
+Check env {"a" /m (nat_value 10)}\mem\(mem_default).
+
+(*AEXP SEMANTICS*)
+
+
+Definition plus_ErrorNat (n1 n2 : ErrorNat) : ErrorNat :=
+  match n1, n2 with
+    | error_nat, _ => error_nat
+    | _, error_nat => error_nat
+    | num v1, num v2 => num (v1 + v2)
+    end.
+
+Definition min_ErrorNat (n1 n2 : ErrorNat) : ErrorNat :=
+  match n1, n2 with
+    | error_nat, _ => error_nat
+    | _, error_nat => error_nat
+    | num n1, num n2 => if Nat.ltb n1 n2
+                        then error_nat
+                        else num (n1 - n2)
+    end.
+
+Definition mul_ErrorNat (n1 n2 : ErrorNat) : ErrorNat :=
+  match n1, n2 with
+    | error_nat, _ => error_nat
+    | _, error_nat => error_nat
+    | num v1, num v2 => num (v1 * v2)
+    end.
+
+Definition div_ErrorNat (n1 n2 : ErrorNat) : ErrorNat :=
+  match n1, n2 with
+    | error_nat, _ => error_nat
+    | _, error_nat => error_nat
+    | _, num 0 => error_nat
+    | num v1, num v2 => num (Nat.div v1 v2)
+    end.
+
+Definition mod_ErrorNat (n1 n2 : ErrorNat) : ErrorNat :=
+  match n1, n2 with
+    | error_nat, _ => error_nat
+    | _, error_nat => error_nat
+    | _, num 0 => error_nat
+    | num v1, num v2 => num (v1 - v2 * (Nat.div v1 v2))
+    end.
+
+Fixpoint aeval_fun (a : AExp) (env : Env) (mem:MemLayer) : ErrorNat :=
+  match a with
+  | avar v => match (mem (env v)) with
+                | nat_value n => n
+                | _ => error_nat
+                end
+  | anum v => v
+  | aplus a1 a2 => (plus_ErrorNat (aeval_fun a1 env mem) (aeval_fun a2 env mem))
+  | amul a1 a2 => (mul_ErrorNat (aeval_fun a1 env mem) (aeval_fun a2 env mem))
+  | amin a1 a2 => (min_ErrorNat (aeval_fun a1 env mem) (aeval_fun a2 env mem))
+  | adiv a1 a2 => (div_ErrorNat  (aeval_fun a1 env mem) (aeval_fun a2 env mem))
+  | amod a1 a2 => (mod_ErrorNat (aeval_fun a1 env mem) (aeval_fun a2 env mem))
+  end.
+
+
+Reserved Notation "A ` M =[ S ]=> N" (at level 30).
+(* Inductive aeval (a : AExp) (sigma : Env) (n : nat) : Prop := *)
+(* | const : a = n -> a =[ sigma ]=> n *)
+(* where "a =[ sigma ]=> n" := (aeval a sigma n). *)
+
+Inductive aeval : AExp -> Env -> MemLayer -> ErrorNat -> Prop :=
+| const : forall n sigma mem , anum n ` mem =[ sigma ]=> n (* <n,sigma> => <n> *) 
+| var : forall v sigma mem ,avar v ` mem =[ sigma ]=>  match (mem (sigma v)) with
+                                                     | nat_value x => x
+                                                     | _ => error_nat
+                                                      end
+| add : forall a1 a2 i1 i2 sigma n,
+    a1 ` mem=[ sigma ]=> i1 ->
+    a2 ` mem =[ sigma ]=> i2 ->
+    n = (plus_ErrorNat i1 i2) ->
+    (a1 +' a2) ` mem =[sigma]=> n
+| diff: forall a1 a2 i1 i2 sigma n,
+    a1 ` mem =[ sigma ]=> i1 ->
+    a2 ` mem =[ sigma ]=> i2 ->
+    n = (min_ErrorNat i1 i2) ->
+    (a1 -' a2) ` mem=[sigma]=> n
+| times : forall a1 a2 i1 i2 sigma n,
+    a1 ` mem =[ sigma ]=> i1 ->
+    a2 ` mem =[ sigma ]=> i2 ->
+    n = (mul_ErrorNat i1 i2) ->
+    (a1 *' a2) ` mem =[sigma]=> n
+| div : forall a1 a2 i1 i2 sigma n,
+    a1 ` mem=[ sigma ]=> i1 ->
+    a2 ` mem=[ sigma ]=> i2 ->
+    n = (div_ErrorNat i1 i2) ->
+    (a1 /' a2) ` mem =[sigma]=> n
+| modulo : forall a1 a2 i1 i2 sigma n,
+    a1 ` mem=[ sigma ]=> i1 ->
+    a2 ` mem=[ sigma ]=> i2 ->
+    n = (mod_ErrorNat i1 i2) ->
+    (a1 %' a2) ` mem=[sigma]=> n
+where "a ` mem =[ sigma ]=> n" := (aeval a sigma mem n).
+
+
+Example division_error : (12 /' 0) ` mem =[ env ]=> error_nat.
+Proof.
+  eapply div.
+  - apply const.
+  - apply const.
+  - simpl. reflexivity.
+Qed.
+
+Example diff1 : (13 -' 5) ` mem =[ env ]=> 8.
+Proof.
+  eapply diff.
+  -apply const.
+  -apply const.
+  -simpl. reflexivity.
+Qed.
+
+(* BEXP SEMANTICS *)
+
+
+Definition lt_ErrorBool (n1 n2 : ErrorNat) : ErrorBool :=
+  match n1, n2 with
+    | error_nat, _ => error_bool
+    | _, error_nat => error_bool
+    | num v1, num v2 => boolean (Nat.ltb v1 v2)
+    end.
+
+Definition gt_ErrorBool (n1 n2 : ErrorNat) : ErrorBool :=
+  match n1, n2 with
+    | error_nat, _ => error_bool
+    | _, error_nat => error_bool
+    | num v1, num v2 => boolean (negb (Nat.ltb v1 v2))
+    end.
+
+Definition not_ErrorBool (n :ErrorBool) : ErrorBool :=
+  match n with
+    | error_bool => error_bool
+    | boolean v => boolean (negb v)
+    end.
+
+Definition and_ErrorBool (n1 n2 : ErrorBool) : ErrorBool :=
+  match n1, n2 with
+    | error_bool, _ => error_bool
+    | _, error_bool => error_bool
+    | boolean v1, boolean v2 => boolean (andb v1 v2)
+    end.
+
+Definition or_ErrorBool (n1 n2 : ErrorBool) : ErrorBool :=
+  match n1, n2 with
+    | error_bool, _ => error_bool
+    | _, error_bool => error_bool
+    | boolean v1, boolean v2 => boolean (orb v1 v2)
+    end.
+
+Fixpoint beval_fun (a : BExp) (envnat : Env) (mem : MemLayer) : ErrorBool :=
+  match a with
+  | btrue => true
+  | bfalse => false
+  | berror => error_bool
+  | bvar v => match mem(env v) with
+                |  bool_value n => n
+                | _ => error_bool
+                end
+  | blessthan a1 a2 => (lt_ErrorBool (aeval_fun a1 envnat mem) (aeval_fun a2 envnat mem))
+  | bgreaterthan a1 a2 => (gt_ErrorBool (aeval_fun a1 envnat mem ) (aeval_fun a2 envnat mem))
+  | bnot b1 => (not_ErrorBool (beval_fun b1 envnat mem))
+  | band b1 b2 => (and_ErrorBool (beval_fun b1 envnat mem) (beval_fun b2 envnat mem))
+  | bor b1 b2 => (or_ErrorBool (beval_fun b1 envnat mem) (beval_fun b2 envnat mem))
+  end.
+
+Reserved Notation "B ~' M ={ S }=> B'" (at level 20).
+Inductive beval : BExp -> Env -> ErrorBool -> MemLayer -> Prop :=
+| b_error: forall sigma mem, berror ~' mem ={ sigma }=> error_bool
+| b_true : forall sigma mem, btrue ~' mem ={ sigma }=> true
+| b_false : forall sigma mem, bfalse  ~' mem ={ sigma }=>   false
+| b_var : forall v sigma mem, bvar v  ~' mem ={ sigma }=>   match mem(sigma v) with
+                                                | bool_value x => x
+                                                | _ => error_bool
+                                                end
+| b_lessthan : forall a1 a2 i1 i2 sigma b mem,
+    a1 ` mem =[ sigma ]=> i1 ->
+    a2 ` mem =[ sigma ]=> i2 ->
+    b = (lt_ErrorBool i1 i2) ->
+    (a1 <' a2)  ~' mem ={ sigma }=>   b
+| b_not : forall a1 i1 sigma b mem,
+    a1 ~' mem ={ sigma }=> i1 ->
+    b = (not_ErrorBool i1) ->
+    (!'a1)  ~' mem ={ sigma }=>   b 
+| b_and : forall a1 a2 i1 i2 sigma b,
+    a1  ~' mem ={ sigma }=> i1 ->
+    a2  ~' mem ={ sigma }=> i2 ->
+    b = (and_ErrorBool i1 i2) ->
+    (a1 and' a2)  ~' mem ={ sigma }=>  b
+| b_or : forall a1 a2 i1 i2 sigma b,
+    a1 ~' mem ={ sigma }=> i1 ->
+    a2 ~' mem ={ sigma }=> i2 ->
+    b = (or_ErrorBool i1 i2) ->
+    (a1 or' a2)  ~' mem ={ sigma }=>  b 
+where "B ~' M ={ S }=> B'" := (beval B S B' M).
+
+(* add examples *)
+
+
+(* STRING OPERATIONS SEMANTICS *)
+
+Definition concat_ErrorString (s1 s2 : ErrorString ) : ErrorString :=
+  match s1, s2 with 
+  | error_string,_ => error_string
+  | _,error_string => error_string
+  | String s1, String s2 => String (append s1 s2)
+  end.
+
+Definition areEqual_ErrorString (s1 s2 : ErrorString) : ErrorString :=
+  match s1, s2 with
+  | error_string,_ => error_string
+  | _,error_string => error_string
+  | String s1, String s2 => if (eqb s1 s2 )
+                            then s1
+                            else String (EmptyString)
+  end.
+
+(* Definition substring_ErrorString (s1 : ErrorString) (n m:AExp) : StringExp :=
+  match s1 with
+  | error_string =>sstring error_string  
+  | String s1 =>  (substring s1 n m)
+  end. *)
+
+Fixpoint seval_fun (s:StringExp)(env:Env)(mem:MemLayer) : ErrorString :=
+  match s with
+  | svar s1 => match (mem(env s1)) with
+              | string_value a => a
+              | _ => error_string
+               end
+  | sstring s1 => s1
+  | strcat s1 s2 => (concat_ErrorString (seval_fun s1 env mem) (seval_fun s2 env mem)) 
+  | areEqual s1 s2 => (areEqual_ErrorString (seval_fun s1 env mem) (seval_fun s2 env mem))
+  end.
