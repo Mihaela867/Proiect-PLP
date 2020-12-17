@@ -101,6 +101,11 @@ Check &&"a".
 
 (*Arrays*)
 
+Inductive array :=
+| ArrayNat : string -> list ErrorNat -> array
+| ArrayBool : string -> list ErrorBool -> array
+| ArrayString : string -> list ErrorString -> array.
+
 Inductive ArrayExp :=
 | elementAt : string -> nat -> ArrayExp
 | first : string -> ArrayExp
@@ -114,6 +119,7 @@ Check "a"[['1']].
 Require Import Coq.Lists.List.
 Import ListNotations.
 Scheme Equality for list.
+
 
 Inductive Stmt :=
 | nat_decl : string -> AExp -> Stmt
@@ -138,12 +144,12 @@ Inductive Stmt :=
 | ifthen : BExp -> Stmt -> Stmt
 | ifthenelse : BExp -> Stmt -> Stmt -> Stmt
 | while : BExp -> Stmt -> Stmt
-| For : Stmt -> BExp -> Stmt -> Stmt->Stmt
+| For : Stmt -> BExp -> Stmt -> Stmt -> Stmt
 | switch : AExp -> list cases -> Stmt
 | functionCall: string -> list string -> Stmt
 with cases  :=
 | case : AExp -> Stmt -> cases
-| defaultcase: Stmt->cases.
+| defaultcase: Stmt -> cases.
 
 
 Notation "S1 ;; S2" := (sequence S1 S2) (at level 98).
@@ -189,6 +195,14 @@ Inductive Value:=
 | string_value : ErrorString -> Value
 | code : Stmt -> Value.
 
+Check code ("a" :n= 0).
+Inductive Function := 
+| function : string -> list Value -> Value -> Function.
+ 
+Definition function1 (s:string) (l: list Value) (cod:Value) : Function :=  function ("f") [nat_value 1] (code ("a" :n= 0)).
+
+
+Compute function1.
 (* Struct *)
 Inductive Members :=
 | member: string -> Value -> Members.
@@ -272,12 +286,32 @@ Definition Stack := list Env.
 
 (* Configuration *)
 Inductive Config :=
-  (* nat: last memory zone
-     Env: environment
-     MemLayer: memory layer
-     Stack: stack 
-  *)
   | config : nat -> Env -> MemLayer -> Stack -> Config.
+
+
+Definition env : Env := fun x => mem_default.
+Definition mem : MemLayer := fun x => undeclared.
+Definition stack : Stack := [env].
+
+(* Pay attention!!! In order to be able to monitor the state of the entire program, you need to
+   implement a function "update_conf", which updates the 
+   entire configuration (environment, memory layout and stack).  
+   config : nat -> Env -> MemLayer -> Stack -> Config (the first value represents the last memory zone, 
+   and you will need to find a way to increment it each time a new variable/function is declared)
+*)
+
+(* Definition update_conf_nat (n:nat) (c:Config) : Config :=
+  match c with
+  | config n' e m s => config (n+n') e m s
+  end.  *)
+
+Definition update_conf (n:nat) (env : Env) (mem:MemLayer) (s:Stack) (c:Config) : Config :=
+  match c with
+  | config a b c d => config (n+a) env mem (env :: d)
+  end.
+
+Compute update_conf 1 env mem stack.
+
 
 (* Function for updating the environment *)
 Definition update_env (env: Env) (x: string) (n: Mem) : Env :=
@@ -291,9 +325,6 @@ Definition update_env (env: Env) (x: string) (n: Mem) : Env :=
         (env y).
 
 Notation "S [ V /e X ]" := (update_env S X V) (at level 10). 
-
-Definition env : Env := fun x => mem_default.
-Definition mem : MemLayer := fun x => undeclared.
 
 (* Initially each variable is assigned to a default memory zone *)
 Compute (env "z"). (* The variable is not yet declared *)
@@ -378,9 +409,6 @@ Fixpoint aeval_fun (a : AExp) (env : Env) (mem:MemLayer) : ErrorNat :=
 
 
 Reserved Notation "A ` M =[ S ]=> N" (at level 30).
-(* Inductive aeval (a : AExp) (sigma : Env) (n : nat) : Prop := *)
-(* | const : a = n -> a =[ sigma ]=> n *)
-(* where "a =[ sigma ]=> n" := (aeval a sigma n). *)
 
 Inductive aeval : AExp -> Env -> MemLayer -> ErrorNat -> Prop :=
 | const : forall n sigma mem , anum n ` mem =[ sigma ]=> n (* <n,sigma> => <n> *) 
@@ -552,3 +580,51 @@ Fixpoint seval_fun (s:StringExp)(env:Env)(mem:MemLayer) : ErrorString :=
   | strcat s1 s2 => (concat_ErrorString (seval_fun s1 env mem) (seval_fun s2 env mem)) 
   | areEqual s1 s2 => (areEqual_ErrorString (seval_fun s1 env mem) (seval_fun s2 env mem))
   end.
+
+(* 
+Inductive seval: StringExp -> Env -> MemLayer -> ErrorString -> Prop :=
+| Svar: forall s sigma mem, seval (svar s) sigma mem s
+| Sstring: forall s sigma mem, seval (sstring s) sigma mem match(mem(sigma s)) with
+                                                          | string_value s => s
+                                                          | _ => error_string
+                                                          end.
+
+ *)
+
+(*STATEMENTS SEMANTICS*)
+
+(* Fixpoint eval_fun (s : Stmt) (env : Env) (gas: nat) (mem_layer:MemLayer) (c:Config) (off : nat) : Env :=
+    match gas with
+    | 0 => env
+    | S gas' => match s with
+                | sequence S1 S2 => eval_fun S2 (eval_fun S1 env gas' mem) gas'
+                | nat_decl a aexp =>  update_conf 1 (update_env env a (offset off)) (update_mem mem (update_env env a (offset off)) a (offset(off+1)) (nat_value (aeval_fun aexp env mem)))
+                | bool_decl b bexp => update_conf 1 (update_env env b mem) (update_mem mem (update_env env b mem) (offset+1) bexp)
+                | ifthen cond s' => 
+                    match (beval_fun cond env) with
+                    | error_bool => env
+                    | boolean v => match v with
+                                 | true => eval_fun s' env gas'
+                                 | false => env
+                                 end
+                    end
+                | ifthenelse cond S1 S2 => 
+                    match (beval_fun cond env) with
+                        | error_bool => env
+                        | boolean v  => match v with
+                                 | true => eval_fun S1 env gas'
+                                 | false => eval_fun S2 env gas'
+                                 end
+                         end
+                | while cond s' => 
+                    match (beval_fun cond env) with
+                        | error_bool => env
+                        | boolean v => match v with
+                                     | true => eval_fun (s' ;; (while cond s')) env gas'
+                                     | false => env
+                                     end
+                        end
+                end
+    end.
+
+ *)
