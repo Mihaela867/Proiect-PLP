@@ -107,6 +107,7 @@ Inductive Array :=
 | array_nat : string -> list nat -> Array
 | array_bool : string -> list bool -> Array
 | array_string : string -> list string -> Array.
+
 Check array_nat "a" [ 1;2;3].
 
 Inductive ArrayExp :=
@@ -119,8 +120,58 @@ Inductive ArrayExp :=
 Notation " s [[' i ']] " := (elementAt s i)(at level 22).
 Check (array_nat "a"[1;2;3])[['1']].
 
-(*Statements*)
+(* List Operations *)
 
+Inductive ListTypes :=
+| empty : ListTypes
+| natList: list nat -> ListTypes
+| boolList: list bool -> ListTypes
+| stringList: list string -> ListTypes.
+
+Notation "l->n A" := (natList A)(at level 38).
+Notation "l->b A" := (boolList A)(at level 38).
+Notation "l->s A" := (stringList A)(at level 38).
+Check l->n [1;2;3].
+Check l->b [true;false].
+Check l->s ["mama";"tata"].
+Inductive ListElmType :=
+| natElm : nat -> ListElmType
+| boolElm : bool -> ListElmType
+| stringElm : string -> ListElmType.
+
+Coercion natElm: nat >-> ListElmType.
+Coercion boolElm: bool >-> ListElmType.
+Coercion stringElm: string >-> ListElmType.
+
+Inductive ListOp :=
+| List : ListTypes -> ListOp
+| listvar : string -> ListTypes -> ListOp
+| begin : ListOp -> ListOp
+| end' : ListOp -> ListOp
+| push_front : ListOp -> ListElmType -> ListOp
+| push_back : ListOp -> ListElmType -> ListOp
+| pop_front : ListOp -> ListElmType -> ListOp
+| pop_back : ListOp -> ListElmType -> ListOp
+| find : ListOp -> ListElmType -> ListOp.
+
+Notation "A <op>" := (List A) (at level 36).
+Notation "A .begin()" := (begin A) (at level 50).
+Notation "A .end()" := (end' A) (at level 50).
+Notation "A .push_front()" := (push_front A) (at level 50).
+Notation "A .push_back()" := (push_front A) (at level 50).
+Notation "A .pop_front()" := (pop_front A) (at level 50).
+Notation "A .pop_back()" := (pop_back A) (at level 50).
+Notation "A .find( x )":= (find A x) (at level 50).
+Check (l->n [1;2;3]) <op>.
+Check ((l->n [1;2;3]) <op>).begin().
+Check ((l->n [1;2;3]) <op>).end().
+Check ((l->n [1;2;3]) <op>).push_back().
+Check ((l->n [1;2;3]) <op>).find(1).
+Check ((l->b [true;false]) <op>).find(true).
+
+
+
+(*Statements*)
 
 Inductive Stmt :=
 | nat_decl : string -> AExp -> Stmt
@@ -130,6 +181,7 @@ Inductive Stmt :=
 | pointer_decl_nat : string -> pointer -> Stmt
 | pointer_decl_bool: string -> pointer -> Stmt
 | reference_decl : string -> string -> Stmt
+| list_decl : string -> ListOp -> Stmt
 | nat_assign : string -> AExp -> Stmt
 | bool_assign : string -> BExp -> Stmt
 | string_assign : string -> StringExp -> Stmt
@@ -183,13 +235,14 @@ Inductive Value:=
 | code : Stmt -> Value.
 
 Check code ("a" :n= 0).
+
 Inductive Function := 
 | function : string -> list Value -> Value -> Function.
  
 Definition function1 (s:string) (l: list Value) (cod:Value) : Function :=  function ("f") [nat_value 1] (code ("a" :n= 0)).
 
-
 Compute function1.
+
 (* Struct *)
 Inductive Members :=
 | member: string -> Value -> Members.
