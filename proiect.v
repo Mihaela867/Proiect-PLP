@@ -6,7 +6,9 @@ Require Import Strings.String.
 Local Open Scope string_scope.
 Local Open Scope list_scope.
 Scheme Equality for string.
-
+Require Import Coq.Lists.List.
+Import ListNotations.
+Scheme Equality for list.
 
 Inductive ErrorNat :=
   | error_nat : ErrorNat
@@ -34,7 +36,8 @@ Coercion String : string >-> ErrorString.
 | amin : AExp -> AExp -> AExp
 | amul : AExp -> AExp -> AExp
 | adiv : AExp -> AExp -> AExp
-| amod : AExp -> AExp -> AExp.
+| amod : AExp -> AExp -> AExp
+| slength: ErrorString -> AExp.
 
 
 Coercion avar : string >-> AExp.
@@ -70,9 +73,8 @@ Infix "or'" := bor (at level 80).
 | svar : string -> StringExp
 | sstring : ErrorString -> StringExp
 | strcat: StringExp -> StringExp -> StringExp
-| areEqual: StringExp -> StringExp -> StringExp.
-(* | slength: ErrorString -> StringExp *)
-(* | substring: StringExp -> AExp -> AExp -> StringExp. *)
+| areEqual: StringExp -> StringExp -> StringExp
+| substring: StringExp -> AExp -> AExp -> StringExp. 
 
 Coercion svar: string >->StringExp.
 (* Notation " A += B " := (concat A B) (at level 60). *)
@@ -101,34 +103,30 @@ Check &&"a".
 
 (*Arrays*)
 
-Inductive array :=
-| ArrayNat : string -> list ErrorNat -> array
-| ArrayBool : string -> list ErrorBool -> array
-| ArrayString : string -> list ErrorString -> array.
+Inductive Array :=
+| array_nat : string -> list nat -> Array
+| array_bool : string -> list bool -> Array
+| array_string : string -> list string -> Array.
+Check array_nat "a" [ 1;2;3].
 
 Inductive ArrayExp :=
-| elementAt : string -> nat -> ArrayExp
-| first : string -> ArrayExp
-| last : string -> ArrayExp
-| deleteAt : string -> nat -> ArrayExp.
+| elementAt : Array -> nat ->ArrayExp
+| first: Array -> ArrayExp
+| last: Array -> ArrayExp 
+| deleteAt: Array -> nat -> ArrayExp
+| insertAt: Array -> nat -> ArrayExp.
 
 Notation " s [[' i ']] " := (elementAt s i)(at level 22).
-Check "a"[['1']].
+Check (array_nat "a"[1;2;3])[['1']].
 
 (*Statements*)
-Require Import Coq.Lists.List.
-Import ListNotations.
-Scheme Equality for list.
 
 
 Inductive Stmt :=
 | nat_decl : string -> AExp -> Stmt
 | bool_decl : string -> BExp -> Stmt
 | string_decl : string -> StringExp -> Stmt
-| array_decl :  string -> nat -> Stmt
-| array_decl_list_nat : string -> nat ->list nat -> Stmt
-| array_decl_list_bool : string -> nat -> list bool -> Stmt
-| array_decl_list_string : string -> nat -> list string -> Stmt
+| array_decl : Array -> nat -> Stmt
 | pointer_decl_nat : string -> pointer -> Stmt
 | pointer_decl_bool: string -> pointer -> Stmt
 | reference_decl : string -> string -> Stmt
@@ -137,9 +135,6 @@ Inductive Stmt :=
 | string_assign : string -> StringExp -> Stmt
 | pointer_assign : string -> pointer -> Stmt
 | reference_assign : string -> string -> Stmt
-| array_elm_assign_nat : ArrayExp -> ErrorNat -> Stmt
-| array_elm_assign_bool : ArrayExp -> ErrorBool -> Stmt
-| array_elm_assign_string : ArrayExp -> ErrorString -> Stmt
 | sequence : Stmt -> Stmt -> Stmt
 | ifthen : BExp -> Stmt -> Stmt
 | ifthenelse : BExp -> Stmt -> Stmt -> Stmt
@@ -160,26 +155,18 @@ Notation "X :s= A" := (string_assign X A)(at level 90).
 Notation "'Nat'' X ::= A" := (nat_decl X A)(at level 90).
 Notation "'Bool' X ::= A" := (bool_decl X A)(at level 90).
 Notation "'Stringg' X ::= A" := (string_decl X A)(at level 92).
-Notation "A [[ B ]]" := (array_decl  A B) (at level 58).
-Notation "A [[[ B ]]] :ln= C" := (array_decl_list_nat A B C) (at level 58). 
-Notation "A [[[ B ]]] :lb= C" := (array_decl_list_bool A B C) (at level 58). 
-Notation "A [[[ B ]]] :ls= C" := (array_decl_list_string A B C) (at level 58). 
-Notation " A :an= B " := (array_elm_assign_nat A B) (at level 58).
-Notation " A :ab= B " := (array_elm_assign_bool A B) (at level 58).
-Notation " A :as= B " := (array_elm_assign_string A B) (at level 58).
+Notation "A [[[ B ]]]" := (array_decl A B ) (at level 58). 
 Notation "F  {{ A }}  " :=  (functionCall F A)(at level 88).
 Check pointer_decl_nat "a" nullptr. 
 Check pointer_decl_nat "a" ("b" **).
 Check pointer_decl_nat "a" (&& "b"). 
-Check "a" [['1']] :an= 2.
-Check "a"[[10]].
 Check "a" :n= 0.
 Check Nat' "a" ::= 0.
 Check Stringg "a" ::=  "ana".
 Check ifthen (3<'2) ("a" :n= 3).
 Check 1+'2.
+Check array_nat "a" [1;2] [[[1]]].
 Check "func" {{["a"]}}.
-Check "v" [[[10]]] :ln= [1;2;3].
 Check switch (1+'2) [ defaultcase ("a" :n= 5)].
 Check switch (avar "a")
     [case (5) ("a" :n= 4);
@@ -393,7 +380,7 @@ Definition mod_ErrorNat (n1 n2 : ErrorNat) : ErrorNat :=
     | num v1, num v2 => num (v1 - v2 * (Nat.div v1 v2))
     end.
 
-Fixpoint aeval_fun (a : AExp) (env : Env) (mem:MemLayer) : ErrorNat :=
+(* Fixpoint aeval_fun (a : AExp) (env : Env) (mem:MemLayer) : ErrorNat :=
   match a with
   | avar v => match (mem (env v)) with
                 | nat_value n => n
@@ -406,7 +393,7 @@ Fixpoint aeval_fun (a : AExp) (env : Env) (mem:MemLayer) : ErrorNat :=
   | adiv a1 a2 => (div_ErrorNat  (aeval_fun a1 env mem) (aeval_fun a2 env mem))
   | amod a1 a2 => (mod_ErrorNat (aeval_fun a1 env mem) (aeval_fun a2 env mem))
   end.
-
+ *)
 
 Reserved Notation "A ` M =[ S ]=> N" (at level 30).
 
@@ -497,7 +484,7 @@ Definition or_ErrorBool (n1 n2 : ErrorBool) : ErrorBool :=
     | boolean v1, boolean v2 => boolean (orb v1 v2)
     end.
 
-Fixpoint beval_fun (a : BExp) (envnat : Env) (mem : MemLayer) : ErrorBool :=
+(* Fixpoint beval_fun (a : BExp) (envnat : Env) (mem : MemLayer) : ErrorBool :=
   match a with
   | btrue => true
   | bfalse => false
@@ -511,7 +498,7 @@ Fixpoint beval_fun (a : BExp) (envnat : Env) (mem : MemLayer) : ErrorBool :=
   | bnot b1 => (not_ErrorBool (beval_fun b1 envnat mem))
   | band b1 b2 => (and_ErrorBool (beval_fun b1 envnat mem) (beval_fun b2 envnat mem))
   | bor b1 b2 => (or_ErrorBool (beval_fun b1 envnat mem) (beval_fun b2 envnat mem))
-  end.
+  end. *)
 
 Reserved Notation "B ~' M ={ S }=> B'" (at level 20).
 Inductive beval : BExp -> Env -> ErrorBool -> MemLayer -> Prop :=
@@ -570,7 +557,7 @@ Definition areEqual_ErrorString (s1 s2 : ErrorString) : ErrorString :=
   | String s1 =>  (substring s1 n m)
   end. *)
 
-Fixpoint seval_fun (s:StringExp)(env:Env)(mem:MemLayer) : ErrorString :=
+(* Fixpoint seval_fun (s:StringExp)(env:Env)(mem:MemLayer) : ErrorString :=
   match s with
   | svar s1 => match (mem(env s1)) with
               | string_value a => a
@@ -580,7 +567,7 @@ Fixpoint seval_fun (s:StringExp)(env:Env)(mem:MemLayer) : ErrorString :=
   | strcat s1 s2 => (concat_ErrorString (seval_fun s1 env mem) (seval_fun s2 env mem)) 
   | areEqual s1 s2 => (areEqual_ErrorString (seval_fun s1 env mem) (seval_fun s2 env mem))
   end.
-
+ *)
 (* 
 Inductive seval: StringExp -> Env -> MemLayer -> ErrorString -> Prop :=
 | Svar: forall s sigma mem, seval (svar s) sigma mem s
@@ -593,38 +580,105 @@ Inductive seval: StringExp -> Env -> MemLayer -> ErrorString -> Prop :=
 
 (*STATEMENTS SEMANTICS*)
 
-(* Fixpoint eval_fun (s : Stmt) (env : Env) (gas: nat) (mem_layer:MemLayer) (c:Config) (off : nat) : Env :=
-    match gas with
-    | 0 => env
-    | S gas' => match s with
-                | sequence S1 S2 => eval_fun S2 (eval_fun S1 env gas' mem) gas'
-                | nat_decl a aexp =>  update_conf 1 (update_env env a (offset off)) (update_mem mem (update_env env a (offset off)) a (offset(off+1)) (nat_value (aeval_fun aexp env mem)))
-                | bool_decl b bexp => update_conf 1 (update_env env b mem) (update_mem mem (update_env env b mem) (offset+1) bexp)
-                | ifthen cond s' => 
-                    match (beval_fun cond env) with
-                    | error_bool => env
-                    | boolean v => match v with
-                                 | true => eval_fun s' env gas'
-                                 | false => env
-                                 end
-                    end
-                | ifthenelse cond S1 S2 => 
-                    match (beval_fun cond env) with
-                        | error_bool => env
-                        | boolean v  => match v with
-                                 | true => eval_fun S1 env gas'
-                                 | false => eval_fun S2 env gas'
-                                 end
-                         end
-                | while cond s' => 
-                    match (beval_fun cond env) with
-                        | error_bool => env
-                        | boolean v => match v with
-                                     | true => eval_fun (s' ;; (while cond s')) env gas'
-                                     | false => env
-                                     end
-                        end
-                end
-    end.
 
- *)
+Definition getFromConfigEnv (c:Config) : Env :=
+match c with
+| config a b c d => b
+end.
+
+Definition getFromConfigMemZone (c:Config) : nat :=
+match c with
+| config a b c d => a
+end.
+
+Definition getFromConfigMem (c:Config) : MemLayer :=
+match c with 
+| config a b c d => c
+end.
+
+Definition getFromConfigStack (c:Config) : Stack :=
+match c with 
+| config a b c d => d
+end. 
+
+
+(* Fixpoint eval_fun (s : Stmt) (gas: nat) (config' :Config) : Config :=
+    match gas with
+    | 0 => config'
+    | S gas' => match s with
+                | sequence S1 S2 => eval_fun S2 gas' (eval_fun S1 gas' config') 
+                | nat_decl a aexp => update_conf 1 (update_env (getFromConfigEnv config') a (offset (getFromConfigMemZone config'))) (update_mem (getFromConfigMem config') (getFromConfigEnv config') a (offset(getFromConfigMemZone config')) ((nat_value (aeval_fun aexp env (getFromConfigMem config')))))(getFromConfigStack config') config'
+                | bool_decl b bexp => config'
+                | string_decl s StringExp => config'
+                | array_decl s n => config'
+                | array_decl_list_nat s n l => config'
+                | array_decl_list_bool s n l => config'
+| array_decl_list_string s n l => config'
+| pointer_decl_nat s p => config'
+| pointer_decl_bool s p => config'
+| reference_decl s s' => config'
+| nat_assign s a => config'
+| bool_assign s b => config'
+| string_assign s a => config'
+| pointer_assign s p => config'
+| reference_assign s a => config'
+| array_elm_assign_nat a n => config'
+| array_elm_assign_bool a b => config'
+| array_elm_assign_string a s => config'
+| ifthen b s => config'
+| ifthenelse b s1 s2 => config'
+| while b s => config'
+| For s1 b s2 s3 => config'
+| switch a l => config'
+| functionCall s l => config'
+
+              end    
+end.
+
+
+Compute (eval_fun ("a" :n= 5) 10 (config 1 env mem stack)(getFromConfigEnv (eval_fun ("a" :n= 5) 10 (config 1 env mem stack)) "a")).
+ 
+
+Reserved Notation "S \ C -{ Sigma }-> Sigma'" (at level 60).
+
+Inductive eval : Stmt -> Env -> Config -> Env -> Prop :=
+| e_nat_decl: forall a i x c sigma sigma',
+   a =[ sigma ]=> i ->
+   sigma' = (update sigma x (res_nat i)) ->
+   (x :n= a) -{ sigma }-> sigma' *)
+(* 
+| e_nat_assign: forall a i x sigma sigma',
+    a =[ sigma ]=> i ->
+    sigma' = (update sigma x (res_nat i)) ->
+    (x :n= a) -{ sigma }-> sigma'
+| e_bool_decl: forall a i x sigma sigma',
+   a ={ sigma }=> i ->
+   sigma' = (update sigma x (res_bool i)) ->
+   (x :b= a) -{ sigma }-> sigma'
+| e_bool_assign: forall a i x sigma sigma',
+    a ={ sigma }=> i ->
+    sigma' = (update sigma x (res_bool i)) ->
+    (x :b= a) -{ sigma }-> sigma'
+| e_seq : forall s1 s2 sigma sigma1 sigma2,
+    s1 -{ sigma }-> sigma1 ->
+    s2 -{ sigma1 }-> sigma2 ->
+    (s1 ;; s2) -{ sigma }-> sigma2
+| e_if_then : forall b s sigma,
+    ifthen b s -{ sigma }-> sigma
+| e_if_then_elsetrue : forall b s1 s2 sigma sigma',
+    b ={ sigma }=> true ->
+    s1 -{ sigma }-> sigma' ->
+    ifthenelse b s1 s2 -{ sigma }-> sigma' 
+| e_if_then_elsefalse : forall b s1 s2 sigma sigma',
+    b ={ sigma }=> false ->
+    s2 -{ sigma }-> sigma' ->
+    ifthenelse b s1 s2 -{ sigma }-> sigma' 
+| e_whilefalse : forall b s sigma,
+    b ={ sigma }=> false ->
+    while b s -{ sigma }-> sigma
+| e_whiletrue : forall b s sigma sigma',
+    b ={ sigma }=> true ->
+    (s ;; while b s) -{ sigma }-> sigma' ->
+    while b s -{ sigma }-> sigma' 
+where "s \ config -{ sigma }-> sigma'" := (eval s sigma config sigma').*)
+
