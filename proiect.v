@@ -77,14 +77,13 @@ Infix "or'" := bor (at level 80).
 | substring: StringExp -> AExp -> AExp -> StringExp. 
 
 Coercion svar: string >->StringExp.
-(* Notation " A += B " := (concat A B) (at level 60). *)
-(* Notation " A ?= B" := (compare A B) (at level 60). *)
-(* Notation "len( A )" := (slength A)(at level 50). *)
+Notation " A += B " := (strcat A B) (at level 60). 
+Notation " A ?= B" := (areEqual A B) (at level 60). 
 Notation "A /in B" := (substring A B)(at level 55).
-(* (* Check "ana" += "maria". *)
-(* Check "ana"?="Ana". *)
-(* Check len("mama"). *)
-Check "in" /in "mina". *)
+
+Check "ana" += "maria". 
+Check "ana"?="Ana".
+Check "in" /in "mina". 
 
 (* pointers and references*)
 
@@ -108,7 +107,11 @@ Inductive Array :=
 | array_bool : string -> list bool -> Array
 | array_string : string -> list string -> Array.
 
-Check array_nat "a" [ 1;2;3].
+Notation "A ->n B  " := (array_nat A B) (at level 50).
+Notation "A ->b B " := (array_bool A B) (at level 50).
+Notation "A ->s B  " := (array_string A B) (at level 50).
+
+Check "a" ->n [ 1;2;3].
 
 Inductive ArrayExp :=
 | elementAt : Array -> nat ->ArrayExp
@@ -118,7 +121,8 @@ Inductive ArrayExp :=
 | insertAt: Array -> nat -> ArrayExp.
 
 Notation " s [[' i ']] " := (elementAt s i)(at level 22).
-Check (array_nat "a"[1;2;3])[['1']].
+
+Check ("a" ->n [1;2;3])[['1']].
 
 (* List Operations *)
 
@@ -178,8 +182,7 @@ Inductive Stmt :=
 | bool_decl : string -> BExp -> Stmt
 | string_decl : string -> StringExp -> Stmt
 | array_decl : Array -> nat -> Stmt
-| pointer_decl_nat : string -> pointer -> Stmt
-| pointer_decl_bool: string -> pointer -> Stmt
+| pointer_decl: string -> pointer -> Stmt
 | reference_decl : string -> string -> Stmt
 | list_decl : string -> ListOp -> Stmt
 | nat_assign : string -> AExp -> Stmt
@@ -193,30 +196,49 @@ Inductive Stmt :=
 | while : BExp -> Stmt -> Stmt
 | For : Stmt -> BExp -> Stmt -> Stmt -> Stmt
 | switch : AExp -> list cases -> Stmt
+| functionDeclare: string -> list parameters -> Stmt -> Stmt
 | functionCall: string -> list string -> Stmt
 with cases  :=
 | case : AExp -> Stmt -> cases
-| defaultcase: Stmt -> cases.
+| defaultcase: Stmt -> cases
+with parameters :=
+| nat_param: string -> ErrorNat -> parameters
+| bool_param: string -> ErrorBool -> parameters
+| string_param: string -> ErrorString ->parameters.
 
 
-Notation "S1 ;; S2" := (sequence S1 S2) (at level 98).
-Notation "'If' B 'Then' S1 'Else' S2 'End'" := (ifthenelse B S1 S2) (at level 97).
-Notation "X :n= A" := (nat_assign X A)(at level 90).
-Notation "X :b= A" := (bool_assign X A)(at level 90).
-Notation "X :s= A" := (string_assign X A)(at level 90).
 Notation "'Nat'' X ::= A" := (nat_decl X A)(at level 90).
 Notation "'Bool' X ::= A" := (bool_decl X A)(at level 90).
 Notation "'Stringg' X ::= A" := (string_decl X A)(at level 92).
 Notation "A [[[ B ]]]" := (array_decl A B ) (at level 58). 
+Notation "A ::p= B" := (pointer_decl A B) (at level 59).
+Notation "A ::r= B" := (reference_decl A B) (at level 50).
+Notation "A ::l= B" := (list_decl A B) (at level 60).
+Notation "X :n= A" := (nat_assign X A)(at level 90).
+Notation "X :b= A" := (bool_assign X A)(at level 90).
+Notation "X :s= A" := (string_assign X A)(at level 90).
+Notation "X :p= A" := (pointer_assign X A)(at level 80).
+Notation "X :r= A" := (reference_assign X A)(at level 80).
+Notation "S1 ;; S2" := (sequence S1 S2) (at level 98).
+Notation "'If' B 'Then' S1 'End'" := (ifthen B S1) (at level 97).
+Notation "'If' B 'Then' S1 'Else' S2 'End'" := (ifthenelse B S1 S2) (at level 97).
+Notation "'For(' S1 ';' B ';' S2 ')' '{' S3 '}'" := (For S1 B S2 S3)(at level 88).
 Notation "F  {{ A }}  " :=  (functionCall F A)(at level 88).
-Check pointer_decl_nat "a" nullptr. 
-Check pointer_decl_nat "a" ("b" **).
-Check pointer_decl_nat "a" (&& "b"). 
+
+Check "a" ::p= nullptr.
+Check "a" ::p= ("b" **).
+Check "a" ::p= (&& "b").
+Check "list1" ::l= (l->n [1;2;3]) <op>.
 Check "a" :n= 0.
 Check Nat' "a" ::= 0.
 Check Stringg "a" ::=  "ana".
-Check ifthen (3<'2) ("a" :n= 3).
-Check 1+'2.
+Check If "b">'2 Then "a" ::p= &&"b" End.
+Check If "b">'2 Then "a" ::p= &&"b" Else "a" ::p= nullptr End.
+Check For("a":n=0 ; "a"<'10 ; "a" :n= "a" +' 1)
+{
+   "s" :n= "s" +' "a"
+ }.
+Check "a" :p= nullptr.
 Check array_nat "a" [1;2] [[[1]]].
 Check "func" {{["a"]}}.
 Check switch (1+'2) [ defaultcase ("a" :n= 5)].
@@ -236,24 +258,29 @@ Inductive Value:=
 
 Check code ("a" :n= 0).
 
-Inductive Function := 
-| function : string -> list Value -> Value -> Function.
- 
-Definition function1 (s:string) (l: list Value) (cod:Value) : Function :=  function ("f") [nat_value 1] (code ("a" :n= 0)).
-
-Compute function1.
-
 (* Struct *)
 Inductive Members :=
 | member: string -> Value -> Members.
 
 Inductive Struct :=
+| nullStr : Struct
 | struct : string -> list Members -> Struct.
 
+Definition structEnv := string -> Struct.
 
 Compute struct "s1" [member "a" default].
 Compute struct "s2" [member "b" (bool_value true); 
                 member "x" (default)].
+
+Definition structEnv1 : structEnv := fun x => nullStr.
+
+(* update_structEnv*)
+
+Definition declareStruct (s:string) (l:(list Members)) : Struct :=
+match structEnv1 s with
+| struct a b=> struct s l
+| nullStr => nullStr
+end.
 
 
 Check "n" :n= 10 ;;
