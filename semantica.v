@@ -1,8 +1,11 @@
-Load proiect.
+Load sintaxa.
+Require Import Coq.Arith.Peano_dec.
+Require Import Coq.Bool.Bool.
 
 
 (*SEMANTICS*)
 
+Check bool.
 Definition check_eq_over_types (t1 : Value) (t2 : Value) : bool :=
   match t1 with
     | undeclared => match t2 with 
@@ -11,6 +14,18 @@ Definition check_eq_over_types (t1 : Value) (t2 : Value) : bool :=
                      end
     | default => match t2 with 
                   | default => true
+                  | _ => false
+                  end
+    | default_nat => match t2 with
+                  | default => true
+                  | _ => false
+                  end
+    | default_bool => match t2 with
+                  | default_bool => true
+                  | _ => false
+                  end
+    | default_string => match t2 with
+                  | default_string => true
                   | _ => false
                   end
     | err_assign => match t2 with 
@@ -27,6 +42,14 @@ Definition check_eq_over_types (t1 : Value) (t2 : Value) : bool :=
                   end
     | string_value  _x => match t2 with
                   | string_value _x => true
+                  | _ => false
+                  end
+    | array_value  _x => match t2 with
+                  | array_value _x => true
+                  | _ => false
+                  end
+    | list_value  _x => match t2 with
+                  | list_value _x => true
                   | _ => false
                   end
     | code _x => match t2 with
@@ -62,7 +85,34 @@ Inductive Config :=
 Definition env : Env := fun x => mem_default.
 Definition mem : MemLayer := fun x => undeclared.
 Definition stack : Stack := [env].
-
+Definition getEmptyEnv: Env := fun x => mem_default.
+Definition env1 : Env :=
+  fun x =>
+    if(String.eqb "n" x)
+    then offset 1
+    else if(String.eqb "sum" x)
+            then offset 0
+            else if(String.eqb "boolean" x)
+                    then offset 2
+                    else if (String.eqb "string" x)
+                         then offset 3
+                         else if(String.eqb "vector" x)
+                              then offset 4
+                              else mem_default.
+Compute env1 "boolean".
+Definition mem1 : MemLayer :=
+  fun x => 
+        if (Mem_beq x (offset 0))
+        then (nat_value 0)
+        else if(Mem_beq x (offset 1))
+             then (nat_value 4)
+             else if(Mem_beq x (offset 2))
+                then (bool_value false)
+                else if(Mem_beq x (offset 3))
+                     then (string_value "plp")
+                     else if(Mem_beq x (offset 4))
+                          then (array_value ("vector" [[10]]->n [1;2;3]))
+                     else undeclared.
 (* Pay attention!!! In order to be able to monitor the state of the entire program, you need to
    implement a function "update_conf", which updates the 
    entire configuration (environment, memory layout and stack).  
@@ -109,13 +159,9 @@ Definition update_mem (mem : MemLayer) (env : Env) (x : string) (type : Mem) (v 
   fun y => 
       if(andb (Mem_beq (env x) type) (Mem_beq y type))
       then
-        if(andb(check_eq_over_types undeclared (mem y)) (negb(check_eq_over_types default v)))
-        then undeclared
-        else if (andb (check_eq_over_types undeclared (mem y)) (check_eq_over_types default v))
+        if (andb (check_eq_over_types undeclared (mem y)) (check_eq_over_types default v))
             then default
-            else if(orb(check_eq_over_types default (mem y)) (check_eq_over_types v (mem y)))
-                 then v
-                 else err_assign
+            else  v
       else (mem y).
 Notation "S { V /m X } \ M \ T" := (update_mem M S V T X)(at level 10).
 Check env [ (offset 4) /e "a" ].
@@ -163,7 +209,13 @@ Definition mod_ErrorNat (n1 n2 : ErrorNat) : ErrorNat :=
     | num v1, num v2 => num (v1 - v2 * (Nat.div v1 v2))
     end.
 
-(* Fixpoint aeval_fun (a : AExp) (env : Env) (mem:MemLayer) : ErrorNat :=
+Definition length_ErrorString (s : ErrorString) : ErrorNat :=
+  match s with
+  | error_string => error_nat
+  | String s1 => String.length (s1)
+  end.
+
+Fixpoint aeval_fun (a : AExp) (env : Env) (mem:MemLayer) : ErrorNat :=
   match a with
   | avar v => match (mem (env v)) with
                 | nat_value n => n
@@ -175,15 +227,16 @@ Definition mod_ErrorNat (n1 n2 : ErrorNat) : ErrorNat :=
   | amin a1 a2 => (min_ErrorNat (aeval_fun a1 env mem) (aeval_fun a2 env mem))
   | adiv a1 a2 => (div_ErrorNat  (aeval_fun a1 env mem) (aeval_fun a2 env mem))
   | amod a1 a2 => (mod_ErrorNat (aeval_fun a1 env mem) (aeval_fun a2 env mem))
+  | slength s => length_ErrorString s
   end.
- *)
+
 
 Reserved Notation "A ` M =[ S ]=> N" (at level 30).
 
 Inductive aeval : AExp -> Env -> MemLayer -> ErrorNat -> Prop :=
-| const : forall n sigma mem , anum n ` mem =[ sigma ]=> n (* <n,sigma> => <n> *) 
-| var : forall v sigma mem ,avar v ` mem =[ sigma ]=>  match (mem (sigma v)) with
-                                                     | nat_value x => x
+| const : forall n sigma mem' , anum n ` mem' =[ sigma ]=> n 
+| var : forall v sigma mem' ,avar v ` mem' =[ sigma ]=>  match (mem' (sigma v)) with
+                                                     | nat_value _x => _x
                                                      | _ => error_nat
                                                       end
 | add : forall a1 a2 i1 i2 sigma n,
@@ -211,6 +264,9 @@ Inductive aeval : AExp -> Env -> MemLayer -> ErrorNat -> Prop :=
     a2 ` mem=[ sigma ]=> i2 ->
     n = (mod_ErrorNat i1 i2) ->
     (a1 %' a2) ` mem=[sigma]=> n
+| Length : forall s n sigma,
+    n =   (length_ErrorString s) ->
+    (slength s) ` mem =[sigma]=> n
 where "a ` mem =[ sigma ]=> n" := (aeval a sigma mem n).
 
 
@@ -229,6 +285,13 @@ Proof.
   -apply const.
   -simpl. reflexivity.
 Qed.
+
+Example length: (slength "ana") ` mem =[ env ]=> 3.
+Proof.
+  eapply Length.
+  -simpl;reflexivity.
+Qed.
+
 
 (* BEXP SEMANTICS *)
 
@@ -266,8 +329,15 @@ Definition or_ErrorBool (n1 n2 : ErrorBool) : ErrorBool :=
     | _, error_bool => error_bool
     | boolean v1, boolean v2 => boolean (orb v1 v2)
     end.
+Compute String.prefix "am" "ana".
+Definition isPrefix_ErrorBool (s1 s2: ErrorString) : ErrorBool :=
+  match s1, s2 with
+    | error_string, _ => error_bool
+    | _, error_string => error_bool
+    | String s1, String s2 => String.prefix s1 s2
+  end.
 
-(* Fixpoint beval_fun (a : BExp) (envnat : Env) (mem : MemLayer) : ErrorBool :=
+ Fixpoint beval_fun (a : BExp) (envnat : Env) (mem : MemLayer) : ErrorBool :=
   match a with
   | btrue => true
   | bfalse => false
@@ -281,14 +351,15 @@ Definition or_ErrorBool (n1 n2 : ErrorBool) : ErrorBool :=
   | bnot b1 => (not_ErrorBool (beval_fun b1 envnat mem))
   | band b1 b2 => (and_ErrorBool (beval_fun b1 envnat mem) (beval_fun b2 envnat mem))
   | bor b1 b2 => (or_ErrorBool (beval_fun b1 envnat mem) (beval_fun b2 envnat mem))
-  end. *)
+  | isPrefix s1 s2 => (isPrefix_ErrorBool s1 s2)
+  end. 
 
 Reserved Notation "B ~' M ={ S }=> B'" (at level 20).
 Inductive beval : BExp -> Env -> ErrorBool -> MemLayer -> Prop :=
 | b_error: forall sigma mem, berror ~' mem ={ sigma }=> error_bool
 | b_true : forall sigma mem, btrue ~' mem ={ sigma }=> true
 | b_false : forall sigma mem, bfalse  ~' mem ={ sigma }=>   false
-| b_var : forall v sigma mem, bvar v  ~' mem ={ sigma }=>   match mem(sigma v) with
+| b_var : forall v sigma mem', bvar v  ~' mem' ={ sigma }=>   match mem'(sigma v) with
                                                 | bool_value x => x
                                                 | _ => error_bool
                                                 end
@@ -311,10 +382,31 @@ Inductive beval : BExp -> Env -> ErrorBool -> MemLayer -> Prop :=
     a2 ~' mem ={ sigma }=> i2 ->
     b = (or_ErrorBool i1 i2) ->
     (a1 or' a2)  ~' mem ={ sigma }=>  b 
+| is_prefix : forall s1 s2 b sigma,
+    b = (isPrefix_ErrorBool s1 s2) ->
+    isPrefix s1 s2 ~' mem ={ sigma }=> b
 where "B ~' M ={ S }=> B'" := (beval B S B' M).
 
-(* add examples *)
+Example prefix1: (isPrefix "ana" "anamaria") ~' mem ={ env }=> true.
+Proof.
+  eapply is_prefix.
+  -simpl;reflexivity.
+Qed.
 
+Example and1: (btrue and' bfalse) ~' mem ={ env }=> false.
+Proof.
+  eapply b_and.
+  -eapply b_true.
+  -eapply b_false.
+  -simpl;reflexivity.
+Qed.
+
+Example not: (!' (bvar "boolean")) ~' mem1 ={ env1 }=> true.
+Proof.
+  eapply b_not.
+  - eapply b_var.
+  - simpl;reflexivity.
+Qed.
 
 (* STRING OPERATIONS SEMANTICS *)
 
@@ -329,18 +421,18 @@ Definition areEqual_ErrorString (s1 s2 : ErrorString) : ErrorString :=
   match s1, s2 with
   | error_string,_ => error_string
   | _,error_string => error_string
-  | String s1, String s2 => if (eqb s1 s2 )
+  | String s1, String s2 => if (String.eqb s1 s2 )
                             then s1
                             else String (EmptyString)
   end.
 
-(* Definition substring_ErrorString (s1 : ErrorString) (n m:AExp) : StringExp :=
+ Definition substring_ErrorString (s1 : ErrorString) (n m:nat) : ErrorString :=
   match s1 with
-  | error_string =>sstring error_string  
-  | String s1 =>  (substring s1 n m)
-  end. *)
+  | error_string => error_string  
+  | String s1 =>  (String.substring n m s1)
+  end.
 
-(* Fixpoint seval_fun (s:StringExp)(env:Env)(mem:MemLayer) : ErrorString :=
+ Fixpoint seval_fun (s:StringExp)(env:Env)(mem:MemLayer) : ErrorString :=
   match s with
   | svar s1 => match (mem(env s1)) with
               | string_value a => a
@@ -349,24 +441,290 @@ Definition areEqual_ErrorString (s1 s2 : ErrorString) : ErrorString :=
   | sstring s1 => s1
   | strcat s1 s2 => (concat_ErrorString (seval_fun s1 env mem) (seval_fun s2 env mem)) 
   | areEqual s1 s2 => (areEqual_ErrorString (seval_fun s1 env mem) (seval_fun s2 env mem))
+  | substring s n m => (substring_ErrorString (seval_fun s env mem) n m)
   end.
- *)
-(* 
+ 
 Inductive seval: StringExp -> Env -> MemLayer -> ErrorString -> Prop :=
-| Svar: forall s sigma mem, seval (svar s) sigma mem s
-| Sstring: forall s sigma mem, seval (sstring s) sigma mem match(mem(sigma s)) with
-                                                          | string_value s => s
-                                                          | _ => error_string
-                                                          end.
+| Svar: forall s sigma mem', seval (svar s) sigma mem'  (match (mem'(sigma s)) with
+                                                                     | string_value s => s
+                                                                     | _ => error_string
+                                                                      end)
+| Sstring: forall s sigma mem, seval (sstring s) sigma mem s
+| Strcat: forall s1 s2 s i1 i2 sigma mem, 
+    seval s1 sigma mem i1 ->
+    seval s2 sigma mem i2 ->
+    s = (concat_ErrorString i1 i2) ->
+    seval (strcat s1 s2) sigma mem s
+| SareEqual: forall s1 s2 s i1 i2 sigma mem,
+    seval s1 sigma mem i1 ->
+    seval s2 sigma mem i2 ->
+    s = (areEqual_ErrorString i1 i2) ->
+    seval (areEqual s1 s2) sigma mem s
+| Substring: forall s1 i1 s n m sigma mem,
+    seval s1 sigma mem i1 ->
+    s = (substring_ErrorString i1 n m ) ->
+    seval (substring s1 n m) sigma mem s.
 
- *)
+Example string_var : seval (svar "string") env1 mem1 ("plp").
+Proof.
+  eapply Svar.
+Qed.
+
+Example concate: seval (strcat (sstring "ana") (svar "string")) env1 mem1 ("anaplp").
+Proof.
+  eapply Strcat.
+  - eapply Sstring.
+  - eapply Svar.
+  - eauto.
+Qed.
+
+Example equality: seval (areEqual (sstring "ana") (svar "string")) env1 mem1 "".
+Proof.
+  eapply SareEqual.
+  - eapply Sstring.
+  - eapply Svar.
+  - simpl;reflexivity.
+Qed.
+
+(* ARRAYEXP SEMANTICS *)
+
+Definition getElementFromArray (a:Array) (nr:nat) : Value :=
+match a with
+| array_nat s n l => nat_value (nth nr l 0)  
+| array_bool s n l => bool_value (nth nr l false) 
+| array_string s n l =>string_value (nth nr l "") 
+| error_array => undeclared
+end.
+
+
+Definition getLastElementFromArray (a:Array) : Value :=
+match a with 
+| array_nat s n l => nat_value (List.last l 0)
+| array_bool s n l => bool_value (List.last l false)
+| array_string s n l => string_value (List.last l "")
+| error_array => undeclared
+end.
+
+Definition deleteFromArray (a:Array) (nr:nat) : Value :=
+match a with
+| array_nat s n l => array_value(array_nat s n (List.remove eq_nat_dec (nth nr l 0) l))
+| array_bool s n l => array_value(array_bool s n (List.remove bool_dec (nth nr l false) l))
+| array_string s n l =>array_value(array_string s n (List.remove string_dec (nth nr l "") l))
+| error_array => undeclared
+end.
+
+Definition insertIntoArrayNat (a:Array) (nr:nat) : Value:=
+match a with
+| array_nat s n l => array_value (array_nat s n ([nr]++l))
+| array_bool s n l => array_value a
+| array_string s n l => array_value a
+| error_array => undeclared
+end.
+
+Definition insertIntoArrayBool (a:Array) (b:bool) : Value:=
+match a with
+| array_nat s n l => array_value a
+| array_bool s n l => array_value (array_bool s n ([b]++l))
+| array_string s n l => array_value a
+| error_array => undeclared
+end.
+
+Definition insertIntoArrayString (a:Array) (str:string) : Value :=
+match a with
+| array_nat s n l => array_value a
+| array_bool s n l => array_value a
+| array_string s n l => array_value (array_string s n ([str]++l))
+| error_array => undeclared
+end.
+
+Inductive array_eval: ArrayExp -> Env -> MemLayer -> Value -> Prop :=
+| arr_Const: forall arr sigma mem, array_eval (arr_const arr) sigma mem (array_value arr)
+| arr_Var: forall arr sigma mem, array_eval (arr_var arr) sigma mem  (mem(sigma arr))
+| arr_elementAt: forall arr nr sigma mem, array_eval (elementAt arr nr) sigma mem (getElementFromArray arr nr)
+| arr_first: forall arr sigma mem, array_eval (first arr) sigma mem (getElementFromArray arr 0)
+| arr_last: forall arr sigma mem, array_eval (last arr) sigma mem (getLastElementFromArray arr) 
+| arr_deleteAt: forall arr nr sigma mem, array_eval (deleteAt arr nr) sigma mem (deleteFromArray arr nr)
+| arr_insertNat: forall arr nr sigma mem, array_eval (insertNat arr nr) sigma mem (insertIntoArrayNat arr nr)
+| arr_insertBool: forall arr b sigma mem, array_eval (insertBool arr b) sigma mem (insertIntoArrayBool arr b)
+| arr_insertString: forall arr str sigma mem, array_eval (insertString arr str) sigma mem (insertIntoArrayString arr str).
+
+
+
+Example variable_arr: array_eval (arr_var "vector") env1 mem1 (array_value ("vector" [[10]]->n [1;2;3])).
+Proof.
+  eapply arr_Var.
+Qed.
+
+Example firstelement: array_eval (first ("a"[[10]]->n [1;2;3])) env1 mem1 (nat_value 1) .
+Proof.
+  eapply arr_first.
+Qed.
+
+Example element: array_eval (elementAt("a"[[10]]->n [1;2;3]) 1) env1 mem1 (nat_value 2).
+Proof.
+  eapply arr_elementAt.
+Qed.
+
+(* LISTS SEMANTICS *)
+
+Inductive list_eval: ListOp -> Env -> MemLayer -> ListTypes -> Prop :=
+| list_const: forall l sigma mem, list_eval (List l) sigma mem l
+| list_var: forall s l sigma mem, list_eval (listvar s l) sigma mem l
+| list_begin': forall l sigma l' mem,
+  list_eval l sigma mem l' ->
+  list_eval (begin l) sigma mem match l' with
+                                | natList list_nat => natList ([(nth 0 list_nat 0)])
+                                | boolList list_bool =>boolList ([ nth 0 list_bool false])
+                                | stringList list_string =>stringList([ nth 0 list_string ""])
+                                end
+| list_end: forall l sigma l' mem ls,
+  list_eval l sigma mem l' ->
+  ls = (match l' with
+                              | natList list_nat => natList([List.last list_nat 0])
+                              | boolList list_bool => boolList ([List.last list_bool false])
+                              | stringList list_string => stringList ([List.last list_string ""])
+                              end) ->
+  list_eval (l.End()) sigma mem ls
+| list_pushBack: forall el l l' sigma mem ls, 
+  list_eval l sigma mem l' ->
+  ls =  match l' with
+                              | natList list_nat => match el with
+                                                   | natElm n => natList (rev (n :: (rev list_nat)))
+                                                   | boolElm b => natList list_nat
+                                                   | stringElm s => natList list_nat
+                                                    end
+                              | boolList list_bool => match el with 
+                                                   | natElm n =>boolList list_bool
+                                                   | boolElm b => boolList (b::list_bool)
+                                                   | stringElm s =>boolList list_bool
+                                                   end
+                              | stringList list_string => match el with
+                                                       | natElm n => stringList list_string
+                                                       | boolElm b => stringList list_string
+                                                       | stringElm s => stringList (s :: list_string)
+                                                         end
+                              end ->
+  list_eval (l.push_back(el)) sigma mem ls
+| list_pushFront: forall el l l' sigma mem ls, 
+  list_eval l sigma mem l' ->
+  ls = match l' with
+                              | natList list_nat => match el with
+                                                   | natElm n => natList ([n]++ list_nat)
+                                                   | boolElm b => natList list_nat
+                                                   | stringElm s => natList list_nat
+                                                    end
+                              | boolList list_bool => match el with 
+                                                   | natElm n =>boolList list_bool
+                                                   | boolElm b => boolList ([b]++list_bool)
+                                                   | stringElm s =>boolList list_bool
+                                                   end
+                              | stringList list_string => match el with
+                                                       | natElm n => stringList list_string
+                                                       | boolElm b => stringList list_string
+                                                       | stringElm s => stringList ([s] ++ list_string)
+                                                         end
+                              end ->
+  list_eval (l.push_front(el)) sigma mem ls 
+| list_popFront: forall l l' sigma mem ls,
+  list_eval l sigma mem l' ->
+  ls = match l' with
+                                 | natList list_nat => natList (List.remove eq_nat_dec (nth 0 list_nat 0) list_nat)
+                                 | boolList list_bool =>boolList (List.remove bool_dec (nth 0 list_bool false) list_bool)
+                                 | stringList list_string => stringList (List.remove string_dec (nth 0 list_string "") list_string)
+                                  end ->
+  list_eval (pop_front l) sigma mem ls
+| list_popBack: forall l l' sigma mem ls,
+  list_eval l sigma mem l' ->
+  ls =  match l' with
+                                 | natList list_nat => natList (List.removelast  list_nat)
+                                 | boolList list_bool =>boolList (List.removelast  list_bool)
+                                 | stringList list_string => stringList (List.removelast  list_string)
+                                  end ->
+  list_eval (pop_back l) sigma mem ls.
+
+Example list_fin: list_eval (((l->n [1;2;3]) <op>).End()) env1 mem1 (natList ([3])).
+Proof.
+  eapply list_end.
+  - eapply list_const.
+  - simpl; eauto.
+Qed.
+ 
+Example pushBack: list_eval(((l->n [1;2;3]) <op>).push_back(natElm 4)) env1 mem1 (natList ([1;2;3;4])).
+Proof.
+  eapply list_pushBack.
+  -eapply list_const.
+  -simpl;eauto.
+Qed.
+
+Example popFront: list_eval(((l->n [1;2;3]) <op>).pop_front()) env1 mem1 (natList ([2;3])).
+Proof.
+  eapply list_popFront.
+  -eapply list_const.
+  -eauto.
+Qed.
+
 
 (*STATEMENTS SEMANTICS*)
+
+(* How to update a variable ???
+--> For every variable you have to assign a memory zone
+--> For every memory zone you can assign a value
+So, to update a variable first you have to give the variable a memory zone (you can get the
+last memory zone from Config) and using that memory zone you properly assign a value to the 
+variable. So the steps for assigning the variabile s with the value v are:
+1. Assign the first free memory zone to the variable s using update_env. Let's say that the variable
+v is assigned at the n offset.
+2. At the offset n memory zone you have to assign the value v, using update_mem.
+3. Update the configuration ( the last memory zone is changed, also the environment and the memory).
+*)
+(* Definition update_mem (mem : MemLayer) (env : Env) (x : string) (type : Mem) (v : Value) : MemLayer := *)
+Definition declare_variable (c:Config) (s:string) (v:Value) :Config :=
+match c with
+| config Last env mem stack => config (Last+1) env (update_mem mem (update_env env s (offset (Last+1)))
+s (offset (Last +1)) v ) (update_env env s (offset (Last+1)) :: (List.removelast stack))
+end.
+
+Definition declare_array (c:Config) (a:Array)  : Config :=
+match c with
+| config Last env mem stack => match a with 
+                              | array_nat s n lNat => config (Last+n) env (update_mem mem 
+                              (update_env env s (offset(Last+1))) s (offset (Last + 1)) (array_value a) ) 
+                              ((update_env env s (offset(Last+1))) :: (List.removelast stack))
+                              | array_bool s n lNat => config (Last+n) env (update_mem mem 
+                              (update_env env s (offset(Last+1))) s (offset (Last + 1)) (array_value a) ) 
+                              ((update_env env s (offset(Last+1))) :: (List.removelast stack))
+                              | array_string s n lNat => config (Last+n) env (update_mem mem 
+                              (update_env env s (offset(Last+1))) s (offset (Last + 1)) (array_value a) ) 
+                              ((update_env env s (offset(Last+1))) :: (List.removelast stack))
+                              | error_array => c
+                              end
+end.
+
+Definition declare_reference (c:Config) (s1 s2 : string) : Config :=
+match c with
+| config Last env mem stack => config Last env mem ((update_env env s2 (env s1)) :: (List.removelast stack))
+end.
+
+(* has to be modified *)
+Definition declare_pointer (c:Config) (s:string) (p:pointer) :Config :=
+match c with
+| config Last env mem stack => config Last env mem ((update_env env s match p with
+                                                            | nullptr => mem_default
+                                                            | ptr s =>  (env s)
+                                                            | ref s =>  (env s)
+                                                           end )::(List.removelast stack))
+end.
+
+Definition declare_struct (c:Config) (s1 s2: string) : Config :=
+match c with
+| config Last env mem stack => config (Last+1) env (update_mem mem (update_env env s2 (offset (Last+1)))
+s2 (offset (Last +1)) default ) ((update_env env s2 (offset (Last+1))) :: (List.removelast stack)) 
+end.
 
 
 Definition getFromConfigEnv (c:Config) : Env :=
 match c with
-| config a b c d => b
+| config a b c d => nth 0 d b
 end.
 
 Definition getFromConfigMemZone (c:Config) : nat :=
@@ -384,84 +742,351 @@ match c with
 | config a b c d => d
 end. 
 
+Definition update_variable (c:Config) (s:string) (v:Value) : Config :=
+match c with 
+| config Last env' mem' stack =>config Last env' (update_mem mem' (getFromConfigEnv c) s ((getFromConfigEnv c) s) v) stack 
+end.
 
-(* Fixpoint eval_fun (s : Stmt) (gas: nat) (config' :Config) : Config :=
-    match gas with
-    | 0 => config'
-    | S gas' => match s with
-                | sequence S1 S2 => eval_fun S2 gas' (eval_fun S1 gas' config') 
-                | nat_decl a aexp => update_conf 1 (update_env (getFromConfigEnv config') a (offset (getFromConfigMemZone config'))) (update_mem (getFromConfigMem config') (getFromConfigEnv config') a (offset(getFromConfigMemZone config')) ((nat_value (aeval_fun aexp env (getFromConfigMem config')))))(getFromConfigStack config') config'
-                | bool_decl b bexp => config'
-                | string_decl s StringExp => config'
-                | array_decl s n => config'
-                | array_decl_list_nat s n l => config'
-                | array_decl_list_bool s n l => config'
-| array_decl_list_string s n l => config'
-| pointer_decl_nat s p => config'
-| pointer_decl_bool s p => config'
-| reference_decl s s' => config'
-| nat_assign s a => config'
-| bool_assign s b => config'
-| string_assign s a => config'
-| pointer_assign s p => config'
-| reference_assign s a => config'
-| array_elm_assign_nat a n => config'
-| array_elm_assign_bool a b => config'
-| array_elm_assign_string a s => config'
-| ifthen b s => config'
-| ifthenelse b s1 s2 => config'
-| while b s => config'
-| For s1 b s2 s3 => config'
-| switch a l => config'
-| functionCall s l => config'
+Definition print_variable (c:Config) (s:string) : Value :=
+match c with
+| config Last env mem stack => mem( (nth 0 stack env) s)
+end.
 
-              end    
+Compute print_variable (update_variable (config 2 env1 mem1 [env1]) "n" (nat_value 10)) "n".
+
+Definition update_pointer (c:Config) (s:string) (p:pointer) :Config := c.
+
+Fixpoint execute_switch (a:ErrorNat) (l:list cases) : Stmt :=
+ match l with
+  | nil => "a" :n=10
+  | el::l' => match el with
+              | (case aexp stmt) => if(ErrorNat_beq (aeval_fun aexp env mem) a) then stmt else (execute_switch  a l')
+              | defaultcase stmt => stmt
+              end                           
+end.
+Compute execute_switch 5 ([case 2 ("a" :n=10); defaultcase ("a" :n= 2)]).
+
+Fixpoint addParametersToEnv (c:Config)(fnc:string)(l: list parameters) (nr : nat)(functionEnv':FunctionEnv) : Config :=
+ match l with
+ | nil => c
+ | el::l' => match c with
+            | config Last env mem stack => match el with
+                                          | error_param => c
+                                          | nat_param n => match (nth nr (functionEnv' fnc) error_types) with
+                                                           | error_types => c
+                                                           | naturalT s => addParametersToEnv (declare_variable c s (nat_value n)) fnc l' nr functionEnv'
+                                                           | booleanT s => c
+                                                           | StringT s => c
+                                                            end
+                                          | bool_param n =>  match (nth nr (functionEnv' fnc) error_types) with
+                                                           | error_types => c
+                                                           | naturalT s => c
+                                                           | booleanT s => addParametersToEnv (declare_variable c s (bool_value n)) fnc l' nr functionEnv'
+                                                           | StringT s => c
+                                                            end
+                                          | string_param n =>  match (nth nr (functionEnv' fnc) error_types) with
+                                                           | error_types => c
+                                                           | naturalT s => c
+                                                           | booleanT s => c
+                                                           | StringT s => addParametersToEnv (declare_variable c s (string_value n)) fnc l' nr functionEnv'
+                                                            end
+                                          | variable s=> c
+                                         end
+            end
+ end.
+Definition updateConfig (c:Config) (env:Env) : Config :=
+match c with
+| config a b c d => config (a+1) env c (env :: d)
+end.
+
+Definition getFunctionBody (c:Config) (s:string) : Stmt :=
+match c with
+| config last_m env mem stack => match mem(env s) with
+                                | code s => s
+                                | _ => error_stmt
+                                end
 end.
 
 
-Compute (eval_fun ("a" :n= 5) 10 (config 1 env mem stack)(getFromConfigEnv (eval_fun ("a" :n= 5) 10 (config 1 env mem stack)) "a")).
- 
+Compute hd (getFromConfigStack (updateConfig (config 0 env1 mem [env1]) (env))).
+Compute  (declare_variable (config 0 env mem [env]) "a" (nat_value 10)) .
 
-Reserved Notation "S \ C -{ Sigma }-> Sigma'" (at level 60).
+Fixpoint eval_fun (s : Stmt) (gas: nat) (config' :Config) : Config :=
+    match gas with
+    | 0 => config'
+    | S gas' => match s with
+                | error_stmt => config'
+                | sequence S1 S2 => eval_fun S2 gas' (eval_fun S1 gas' config') 
+                | nat_decl a aexp => declare_variable config' a (nat_value (aeval_fun aexp (getFromConfigEnv config') (getFromConfigMem config'))) 
+                | bool_decl b bexp => declare_variable config' b (bool_value (beval_fun bexp (getFromConfigEnv config') (getFromConfigMem config'))) 
+                | string_decl s StringExp => declare_variable config' s (string_value (seval_fun StringExp (getFromConfigEnv config') (getFromConfigMem config'))) 
+                | array_decl a => declare_array config' a
+                | reference_decl s s' => declare_reference config' s s'
+                | pointer_decl s s' => declare_pointer config' s s'
+                | list_decl s l => declare_variable config' s ( list_value l) (*add list_eval for l*)
+                | struct_decl s s' => declare_struct config' s s' 
+                | nat_assign s a => update_variable config' s (nat_value (aeval_fun a (getFromConfigEnv config') (getFromConfigMem config')))
+                | bool_assign s b => update_variable config' s (bool_value (beval_fun b (getFromConfigEnv config') (getFromConfigMem config')))
+                | string_assign s a => update_variable config' s (string_value (seval_fun a (getFromConfigEnv config') (getFromConfigMem config')))
+                | pointer_assign s p => update_pointer config' s p
+                | reference_assign s a => declare_reference config' s a
+                | ifthen b s => config'
+                | ifthenelse b s1 s2 => config'
+                | while b s => config'
+                | For s1 b s2 s3 => config'
+                | switch a l => config'
+                | functionCall s l => config'
+              end    
+end. 
 
-Inductive eval : Stmt -> Env -> Config -> Env -> Prop :=
-| e_nat_decl: forall a i x c sigma sigma',
-   a =[ sigma ]=> i ->
-   sigma' = (update sigma x (res_nat i)) ->
-   (x :n= a) -{ sigma }-> sigma' *)
-(* 
-| e_nat_assign: forall a i x sigma sigma',
-    a =[ sigma ]=> i ->
-    sigma' = (update sigma x (res_nat i)) ->
-    (x :n= a) -{ sigma }-> sigma'
-| e_bool_decl: forall a i x sigma sigma',
-   a ={ sigma }=> i ->
-   sigma' = (update sigma x (res_bool i)) ->
-   (x :b= a) -{ sigma }-> sigma'
-| e_bool_assign: forall a i x sigma sigma',
-    a ={ sigma }=> i ->
-    sigma' = (update sigma x (res_bool i)) ->
-    (x :b= a) -{ sigma }-> sigma'
-| e_seq : forall s1 s2 sigma sigma1 sigma2,
-    s1 -{ sigma }-> sigma1 ->
-    s2 -{ sigma1 }-> sigma2 ->
-    (s1 ;; s2) -{ sigma }-> sigma2
-| e_if_then : forall b s sigma,
-    ifthen b s -{ sigma }-> sigma
-| e_if_then_elsetrue : forall b s1 s2 sigma sigma',
-    b ={ sigma }=> true ->
-    s1 -{ sigma }-> sigma' ->
-    ifthenelse b s1 s2 -{ sigma }-> sigma' 
-| e_if_then_elsefalse : forall b s1 s2 sigma sigma',
-    b ={ sigma }=> false ->
-    s2 -{ sigma }-> sigma' ->
-    ifthenelse b s1 s2 -{ sigma }-> sigma' 
-| e_whilefalse : forall b s sigma,
-    b ={ sigma }=> false ->
-    while b s -{ sigma }-> sigma
-| e_whiletrue : forall b s sigma sigma',
-    b ={ sigma }=> true ->
-    (s ;; while b s) -{ sigma }-> sigma' ->
-    while b s -{ sigma }-> sigma' 
-where "s \ config -{ sigma }-> sigma'" := (eval s sigma config sigma').*)
+Compute print_variable (eval_fun (Nat' "a" ::= 5) 10 (config 0 env mem stack)) ("a").
+Compute print_variable (eval_fun (Bool "b" ::= bfalse) 10 (config 0 env mem stack)) "b".
+Compute print_variable (eval_fun (Stringg "s" ::= sstring "ana") 10 (config 0 env mem stack)) "s".
+Compute print_variable (eval_fun (Array'::="a"[[10]]->n [1;2]) 10 (config 0 env mem stack)) "a".
+Compute print_variable (eval_fun ("a" ::r= "b") 10 (eval_fun (Nat' "b" ::= 5) 10 (config 0 env mem stack)))"b".
+Compute print_variable (eval_fun ("List" ::l= (l->n [1;2;3;4])<op>) 10 (config 0 env mem stack )) ("List").
+
+(* Pentru a avea mai multe env primul env din config ar trebui sa fie env global, apoi cel din varful stivei sa fie env-ul curent*)
+
+(* aeval --> Reserved Notation "A ` M =[ S ]=> N" (at level 30).*)
+(* beval --> Reserved Notation "B ~' M ={ S }=> B'" (at level 20). *)
+(*Inductive seval: StringExp -> Env -> MemLayer -> ErrorString -> Prop := *)
+Inductive eval : Stmt  -> Config -> Config -> FunctionEnv -> StructEnv ->Prop := 
+| e_error: forall sigma sigma' fnc str, eval (error_stmt) sigma sigma' fnc str
+| e_nat_decl: forall s i a  sigma sigma' fnc str,
+   a ` (getFromConfigMem sigma)=[ (getFromConfigEnv sigma) ]=> i ->
+   sigma' = declare_variable sigma s (nat_value i) ->
+   eval (Nat' s ::= a) sigma sigma' fnc str
+| e_bool_decl: forall s i b sigma sigma' fnc str,
+   b ~' (getFromConfigMem sigma) ={ getFromConfigEnv sigma }=> i ->
+   sigma' = declare_variable sigma s (bool_value i) ->
+   eval (Bool s ::= b) sigma sigma' fnc str
+| e_string_decl: forall s i s' sigma sigma' fnc str,
+   seval s' (getFromConfigEnv sigma) (getFromConfigMem sigma) i ->
+   sigma' = declare_variable sigma s (string_value i) ->
+   eval (Stringg s ::= s') sigma sigma fnc str
+| e_array_decl: forall arr sigma sigma' fnc str,
+  sigma' = (declare_array sigma  arr) ->
+  eval (Array'::= arr) sigma sigma' fnc str
+| e_reference_decl: forall s s' sigma sigma' fnc str,
+  sigma' = (declare_reference sigma s s') ->
+  eval (s ::r= s') sigma sigma' fnc str
+| e_pointer_decl : forall s s' sigma sigma' fnc str,
+  sigma' = (declare_pointer sigma s s') ->
+  eval (s ::p= s') sigma sigma' fnc str
+| e_list_decl : forall s l sigma sigma' fnc str,
+  sigma' = ( declare_variable sigma s (list_value l)) ->
+  eval (s ::l= l )  sigma  sigma' fnc str
+| e_struct_decl : forall s s' sigma sigma' fnc str,
+  sigma' = (declare_struct sigma s s') ->
+  eval (struct_decl s s') sigma sigma' fnc str
+| e_nat_assign: forall a i s sigma sigma' fnc str,
+  a ` (getFromConfigMem sigma)=[ (getFromConfigEnv sigma) ]=> i ->
+  sigma' = (update_variable sigma s (nat_value i)) ->
+  eval (s :n= a)  sigma sigma' fnc str
+| e_bool_assign: forall b i s sigma sigma' fnc str,
+  b ~' (getFromConfigMem sigma) ={ getFromConfigEnv sigma }=> i ->
+  sigma' = update_variable sigma s (bool_value i) ->
+  eval ( s :b= b) sigma sigma' fnc str
+| e_string_assign: forall s i s' sigma sigma' fnc str,
+   seval s' (getFromConfigEnv sigma) (getFromConfigMem sigma) i ->
+   sigma' = update_variable sigma s (string_value i) ->
+   eval (s :s= s') sigma sigma' fnc str
+| e_pointer_assign : forall s s' sigma sigma' fnc str,
+  sigma' = (update_pointer sigma s s') ->
+  eval (s :p= s') sigma sigma' fnc str
+| e_reference_assign: forall s s' sigma sigma' fnc str,
+  sigma' = (declare_reference sigma s s') ->
+  eval (s :r= s') sigma sigma' fnc str
+| e_seq : forall s1 s2 sigma sigma1 sigma2 fnc str,
+    eval s1 sigma  sigma1 fnc str->
+    eval s2  sigma1  sigma2 fnc str->
+    eval (s1 ;; s2) sigma sigma2 fnc str
+| e_iffalse : forall b s sigma fnc str,
+    b ~' (getFromConfigMem sigma) ={ getFromConfigEnv sigma }=> false ->
+    eval (ifthen b s) sigma sigma fnc str
+| e_iftrue : forall b s sigma sigma1 fnc str,
+    b ~' (getFromConfigMem sigma) ={ getFromConfigEnv sigma }=> true ->
+    eval s sigma  sigma1 fnc str ->
+    eval (ifthen b s) sigma sigma1 fnc str
+| e_ifthenfalse : forall b s1 s2 sigma sigma1 fnc str,
+    b ~' (getFromConfigMem sigma) ={ getFromConfigEnv sigma }=> false ->
+    eval s2 sigma  sigma1 fnc str->
+    eval (ifthenelse b s1 s2) sigma sigma1 fnc str
+| e_ifthentrue : forall b s1 s2 sigma sigma1 fnc str,
+    b ~' (getFromConfigMem sigma) ={ getFromConfigEnv sigma }=> true ->
+    eval s1 sigma  sigma1 fnc str->
+    eval (ifthenelse b s1 s2) sigma sigma1 fnc str
+| e_whilefalse : forall b s sigma fnc str,
+    b ~' (getFromConfigMem sigma) ={ getFromConfigEnv sigma }=> false ->
+    eval (while b s) sigma  sigma fnc str
+| e_whiletrue : forall b s sigma sigma' fnc str,
+    b ~' (getFromConfigMem sigma) ={ getFromConfigEnv sigma }=> true ->
+    eval (s ;; while b s)  sigma  sigma' fnc str->
+    eval (while b s) sigma  sigma' fnc str
+| e_fortrue: forall s1 b s2 s3 sigma sigma1 sigma2 fnc str,
+    eval s1 sigma  sigma1 fnc str->
+    b ~' (getFromConfigMem sigma) ={ getFromConfigEnv sigma }=> true ->
+    eval (while b (s2;;s3)) sigma1 sigma2 fnc str->
+    eval (For s1 b s2 s3 ) sigma  sigma2 fnc str
+| e_forfalse: forall s1 b s2 s3 sigma sigma1 fnc str,
+    eval s1 sigma sigma1 fnc str->
+    b ~' (getFromConfigMem sigma) ={ getFromConfigEnv sigma }=> true ->
+    eval (while b (s2;;s3)) sigma1 sigma1 fnc str ->
+    eval (For s1 b s2 s3 ) sigma  sigma1 fnc str
+| e_switch: forall s a l i sigma sigma' fnc str,
+    a ` (getFromConfigMem sigma)=[ (getFromConfigEnv sigma) ]=> i ->
+    s = execute_switch i l ->
+    eval s  sigma sigma' fnc str ->
+    eval (switch a l)  sigma  sigma' fnc str
+| e_functionCall: forall s l stmt sigma sigma' sigma'' fnc str,
+    stmt = getFunctionBody sigma s ->
+    sigma' = updateConfig sigma getEmptyEnv ->
+    sigma' = addParametersToEnv sigma' s l 0 fnc->
+    eval stmt sigma' sigma'' fnc str ->
+    eval (functionCall s l) sigma sigma'' fnc str
+.
+
+(* Definition update_mem (mem : MemLayer) (env : Env) (x : string) (type : Mem) (v : Value) : MemLayer := *)
+
+Require Import Omega.
+Example if_true : eval (If  "n" <' 12 Then  "n" :n= 3 Else "n":n=10 End) (config 0 env1 mem1 [env1]) (config 0 env1 (env1 {"n" /m nat_value 3}\ mem1 \ (env1 "n")) [env1]) functionEnv structEnv.
+Proof.
+  eapply e_ifthentrue.
+  -simpl;eapply b_lessthan;eauto.
+    + eapply var.
+    + eapply const.
+    + simpl;eauto.
+  -eapply e_nat_assign.
+    + eapply const.
+    + eauto.
+Qed.
+
+Example assign_nat: eval ("n" :n= 5) (config 0 env1 mem1 [env1]) (config 0 env1 (env1 {"n" /m nat_value 5}\ mem1 \ (env1 "n")) [env1]) functionEnv structEnv.
+Proof.
+  eapply e_nat_assign.
+  -eapply const.
+  - simpl;eauto.
+Qed.
+
+Example var_decl: eval (Nat' "n" ::= 10) (config 0 env1 mem1 [env1]) (config 1 env1 ((env1 [offset 1 /e "n"]) {"n" /m nat_value 10}\ mem1 \ (offset 1))  [env1 [offset 1 /e "n"]]) functionEnv structEnv.
+Proof.
+  eapply e_nat_decl.
+  - simpl.
+    +eapply const.
+  - simpl;eauto.
+Qed.
+
+Example switch_exec: eval (switch (avar "n") [case (4) (Nat' "a" ::=4); defaultcase (Nat' "a" ::= 10)]) (config 0 env1 mem1 [env1] ) (config 1 env1 ((env1 [offset 1 /e "a"]) {"a" /m nat_value 4}\ mem1 \ (offset 1))  [env1 [offset 1 /e "a"]]) functionEnv structEnv.
+Proof.
+  eapply e_switch.
+  -simpl; eapply var.
+  -simpl;eauto.
+  -eapply e_nat_decl.
+    +simpl; eapply const.
+    +eauto.
+Qed.
+
+Definition declare_variableGlobal (c:Config) (s:string) (v:Value) :Config :=
+match c with
+| config Last env mem stack => config (Last+1) (update_env env s (offset (Last+1))) (update_mem mem (update_env env s (offset (Last+1)))
+s (offset (Last +1)) v ) (update_env env s (offset (Last+1)) :: (List.removelast stack))
+end.
+
+Inductive program_eval : program -> Config -> Config -> FunctionEnv -> StructEnv -> Prop :=
+| p_seq: forall s1 s2 sigma sigma1 sigma2 fnc str,
+    program_eval s1 sigma sigma1 fnc str->
+    program_eval s2 sigma1 sigma2 fnc str->
+    program_eval (s1 ;;; s2) sigma sigma2 fnc str
+| p_declNat: forall s i a  sigma sigma' fnc str,
+   a ` (getFromConfigMem sigma)=[ (getFromConfigEnv sigma) ]=> i ->
+   sigma' = declare_variableGlobal sigma s (nat_value i) ->
+   program_eval (Nat_gl s ::n= a) sigma sigma' fnc str
+| p_declBool: forall s i b  sigma sigma' fnc str,
+   b ~' (getFromConfigMem sigma) ={ getFromConfigEnv sigma }=> i ->
+   sigma' = declare_variableGlobal sigma s (bool_value i) ->
+   program_eval (Bool_gl s ::b= b) sigma sigma' fnc str
+| p_declString: forall s i s'  sigma sigma' fnc str,
+   seval s' (getFromConfigEnv sigma) (getFromConfigMem sigma) i ->
+   sigma' = declare_variableGlobal sigma s (string_value i) ->
+   program_eval (String_gl s ::s= s') sigma sigma' fnc str
+| p_declFunction: forall s l c sigma sigma' functionEnv' fnc str,
+   sigma' = (declare_variableGlobal sigma s (code c)) ->
+   functionEnv' = update_FunctionEnv fnc s l ->
+   program_eval (function s l (code c)) sigma sigma' functionEnv' str
+| p_declStruct: forall s l sigma sigma' structEnv fnc str,
+   structEnv = update_StructEnv str s l ->
+   program_eval (struct s l) sigma sigma' fnc structEnv
+| p_main : forall s sigma sigma' fnc str,
+   eval s sigma  sigma' fnc str ->
+   program_eval (main s) sigma sigma' fnc str.
+
+Example declarare: program_eval (Nat_gl "a" ::n= 10) (config 0 env mem stack) (config 1 (env [offset 1 /e "a"]) ((env [offset 1 /e "a"]) {"a" /m nat_value 10}\ mem \(offset 1)) [env [offset 1 /e "a"]]) functionEnv structEnv.
+Proof.
+  eapply p_declNat.
+  -eapply const.
+  -simpl;eauto.
+Qed.
+
+Example func: program_eval (function "suma" [naturalT "a"]
+  (
+   code(
+     "sum" :n= "sum" +' "n"
+  )
+  )) (config 0 env1 mem1 [env1]) (config 1 (env1 [offset 1 /e "suma"])
+  ((env1 [offset 1 /e "suma"]) {"suma" /m
+   code ("sum" :n= "sum" +' "n")}\ mem1 \ 
+   (offset 1)) [env1 [offset 1 /e "suma"]]) (update_FunctionEnv functionEnv "suma" [naturalT "a"]) structEnv.
+Proof.
+  eapply p_declFunction.
+  -simpl;eauto.
+  -eauto.
+Qed.
+
+
+Definition prg2 := 
+  (Nat_gl "sum" ::n= 0) ;;;
+  function "suma" [naturalT "a"]
+  (
+   code(
+     "sum" :n= "sum" +' "n"
+  )
+  ) ;;;
+  (struct "pereche"
+  [
+    member "stanga" default_nat;
+    member "dreapta" default_nat
+  ]);;;
+
+  main (
+      "suma" {{[variable "a"]}}
+).
+
+Hint Constructors eval : my_hints.
+Hint Resolve getFunctionBody : my_hints.
+Hint Extern 1 => eapply eval.
+
+Example program1: program_eval (prg2) (config 0 env1 mem1 [env1])  (config 0 env1 mem1 [env1]) (update_FunctionEnv functionEnv "suma" [naturalT "a"]) (update_StructEnv structEnv "pereche" [
+    member "stanga" default_nat;
+    member "dreapta" default_nat
+  ]).
+Proof.
+  eapply p_seq.
+  -eapply p_seq.
+    + eapply p_seq.
+      ++ eapply p_declNat.
+          +++ eapply const.
+          +++ simpl;eauto.
+      ++ eapply p_declFunction.
+          +++simpl;eauto.
+          +++eauto.
+    + eapply p_declStruct.
+      ++eauto.
+  - eapply p_main.
+    +eapply e_functionCall.
+      ++eauto.
+      ++eauto.
+      ++simpl. destruct updateConfig. eauto.
+Admitted.
+
 
