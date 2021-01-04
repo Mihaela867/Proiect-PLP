@@ -98,6 +98,8 @@ Definition env1 : Env :=
                          then offset 3
                          else if(String.eqb "vector" x)
                               then offset 4
+                              else if (String.eqb "suma" x)
+                                   then offset 5
                               else mem_default.
 Compute env1 "boolean".
 Definition mem1 : MemLayer :=
@@ -112,7 +114,31 @@ Definition mem1 : MemLayer :=
                      then (string_value "plp")
                      else if(Mem_beq x (offset 4))
                           then (array_value ("vector" [[10]]->n [1;2;3]))
+                          else if(Mem_beq x (offset 5))
+                               then (code (Nat' "sum" ::= 0;;"sum" :n= "sum" +' "n"))
                      else undeclared.
+
+
+
+Definition FunctionEnv := string -> list types.
+Definition StructEnv := string -> list members.
+Definition functionEnv : FunctionEnv :=
+  fun x => [].
+Definition functionEnv1 : FunctionEnv :=
+  fun x => if(String.eqb "suma" x)
+           then [naturalT "n"]
+           else [].
+Definition structEnv : StructEnv :=
+  fun x => [].
+Definition update_FunctionEnv (fnc_env:FunctionEnv) (s:string) (l:list types) : FunctionEnv :=
+ fun x => 
+     if (string_beq s x) then l
+     else (fnc_env x).
+
+Definition update_StructEnv (st_env:StructEnv) (s:string) (l:list members) :StructEnv :=
+  fun x =>
+      if (string_beq s x) then l
+      else (st_env x).
 (* Pay attention!!! In order to be able to monitor the state of the entire program, you need to
    implement a function "update_conf", which updates the 
    entire configuration (environment, memory layout and stack).  
@@ -717,8 +743,8 @@ end.
 
 Definition declare_struct (c:Config) (s1 s2: string) : Config :=
 match c with
-| config Last env mem stack => config (Last+1) env (update_mem mem (update_env env s2 (offset (Last+1)))
-s2 (offset (Last +1)) default ) ((update_env env s2 (offset (Last+1))) :: (List.removelast stack)) 
+| config Last env' mem' stack => config (Last+1) env' (update_mem mem' (update_env env' s2 (offset (Last+1)))
+s2 (offset (Last +1)) default ) ((update_env env' s2 (offset (Last+1))) :: (List.removelast stack)) 
 end.
 
 
@@ -744,7 +770,9 @@ end.
 
 Definition update_variable (c:Config) (s:string) (v:Value) : Config :=
 match c with 
-| config Last env' mem' stack =>config Last env' (update_mem mem' (getFromConfigEnv c) s ((getFromConfigEnv c) s) v) stack 
+| config Last env' mem' stack => if(Mem_beq ((getFromConfigEnv c) s) mem_default)
+                                    then config Last env' (update_mem mem' env' s (env' s) v) stack 
+                                    else config Last env' (update_mem mem' (getFromConfigEnv c) s ((getFromConfigEnv c) s) v) stack 
 end.
 
 Definition print_variable (c:Config) (s:string) : Value :=
@@ -754,18 +782,26 @@ end.
 
 Compute print_variable (update_variable (config 2 env1 mem1 [env1]) "n" (nat_value 10)) "n".
 
-Definition update_pointer (c:Config) (s:string) (p:pointer) :Config := c.
-
+Definition update_pointer (c:Config) (s:string) (p:pointer) :Config := 
+match c with
+| config Last env mem stack => config Last env mem ((update_env env s match p with
+                                                            | nullptr => mem_default
+                                                            | ptr s =>  (env s)
+                                                            | ref s =>  (env s)
+                                                           end )::(List.removelast stack))
+end.
 Fixpoint execute_switch (a:ErrorNat) (l:list cases) : Stmt :=
  match l with
-  | nil => "a" :n=10
+  | nil => error_stmt
   | el::l' => match el with
               | (case aexp stmt) => if(ErrorNat_beq (aeval_fun aexp env mem) a) then stmt else (execute_switch  a l')
               | defaultcase stmt => stmt
               end                           
 end.
 Compute execute_switch 5 ([case 2 ("a" :n=10); defaultcase ("a" :n= 2)]).
-
+Compute functionEnv1 "suma".
+Compute nth 0 (functionEnv1 "suma") error_types.
+Compute print_variable (config 0 env1 mem1 [env1]) "suma".
 Fixpoint addParametersToEnv (c:Config)(fnc:string)(l: list parameters) (nr : nat)(functionEnv':FunctionEnv) : Config :=
  match l with
  | nil => c
@@ -774,26 +810,27 @@ Fixpoint addParametersToEnv (c:Config)(fnc:string)(l: list parameters) (nr : nat
                                           | error_param => c
                                           | nat_param n => match (nth nr (functionEnv' fnc) error_types) with
                                                            | error_types => c
-                                                           | naturalT s => addParametersToEnv (declare_variable c s (nat_value n)) fnc l' nr functionEnv'
+                                                           | naturalT s => addParametersToEnv (declare_variable c s (nat_value n)) fnc l' (nr+1) functionEnv'
                                                            | booleanT s => c
                                                            | StringT s => c
                                                             end
                                           | bool_param n =>  match (nth nr (functionEnv' fnc) error_types) with
                                                            | error_types => c
                                                            | naturalT s => c
-                                                           | booleanT s => addParametersToEnv (declare_variable c s (bool_value n)) fnc l' nr functionEnv'
+                                                           | booleanT s => addParametersToEnv (declare_variable c s (bool_value n)) fnc l' (nr+1) functionEnv'
                                                            | StringT s => c
                                                             end
                                           | string_param n =>  match (nth nr (functionEnv' fnc) error_types) with
                                                            | error_types => c
                                                            | naturalT s => c
                                                            | booleanT s => c
-                                                           | StringT s => addParametersToEnv (declare_variable c s (string_value n)) fnc l' nr functionEnv'
+                                                           | StringT s => addParametersToEnv (declare_variable c s (string_value n)) fnc l' (nr+1) functionEnv'
                                                             end
-                                          | variable s=> c
+                                          | variable s => c
                                          end
             end
  end.
+
 Definition updateConfig (c:Config) (env:Env) : Config :=
 match c with
 | config a b c d => config (a+1) env c (env :: d)
@@ -801,29 +838,31 @@ end.
 
 Definition getFunctionBody (c:Config) (s:string) : Stmt :=
 match c with
-| config last_m env mem stack => match mem(env s) with
-                                | code s => s
+| config last_m env' mem' stack => match mem'(env' s) with
+                                | code stmt => stmt
                                 | _ => error_stmt
                                 end
 end.
 
 
+
+
 Compute hd (getFromConfigStack (updateConfig (config 0 env1 mem [env1]) (env))).
 Compute  (declare_variable (config 0 env mem [env]) "a" (nat_value 10)) .
 
-Fixpoint eval_fun (s : Stmt) (gas: nat) (config' :Config) : Config :=
+Fixpoint eval_fun (s : Stmt) (gas: nat) (config' :Config) (fnc:FunctionEnv) : Config :=
     match gas with
     | 0 => config'
     | S gas' => match s with
                 | error_stmt => config'
-                | sequence S1 S2 => eval_fun S2 gas' (eval_fun S1 gas' config') 
+                | sequence S1 S2 => eval_fun S2 gas' (eval_fun S1 gas' config' fnc) fnc
                 | nat_decl a aexp => declare_variable config' a (nat_value (aeval_fun aexp (getFromConfigEnv config') (getFromConfigMem config'))) 
                 | bool_decl b bexp => declare_variable config' b (bool_value (beval_fun bexp (getFromConfigEnv config') (getFromConfigMem config'))) 
                 | string_decl s StringExp => declare_variable config' s (string_value (seval_fun StringExp (getFromConfigEnv config') (getFromConfigMem config'))) 
                 | array_decl a => declare_array config' a
                 | reference_decl s s' => declare_reference config' s s'
                 | pointer_decl s s' => declare_pointer config' s s'
-                | list_decl s l => declare_variable config' s ( list_value l) (*add list_eval for l*)
+                | list_decl s l => declare_variable config' s ( list_value l) 
                 | struct_decl s s' => declare_struct config' s s' 
                 | nat_assign s a => update_variable config' s (nat_value (aeval_fun a (getFromConfigEnv config') (getFromConfigMem config')))
                 | bool_assign s b => update_variable config' s (bool_value (beval_fun b (getFromConfigEnv config') (getFromConfigMem config')))
@@ -835,22 +874,21 @@ Fixpoint eval_fun (s : Stmt) (gas: nat) (config' :Config) : Config :=
                 | while b s => config'
                 | For s1 b s2 s3 => config'
                 | switch a l => config'
-                | functionCall s l => config'
+                | functionCall s l => eval_fun (getFunctionBody config' s) gas' (addParametersToEnv config'  s l 0 fnc) fnc
               end    
-end. 
+end.
 
-Compute print_variable (eval_fun (Nat' "a" ::= 5) 10 (config 0 env mem stack)) ("a").
-Compute print_variable (eval_fun (Bool "b" ::= bfalse) 10 (config 0 env mem stack)) "b".
-Compute print_variable (eval_fun (Stringg "s" ::= sstring "ana") 10 (config 0 env mem stack)) "s".
-Compute print_variable (eval_fun (Array'::="a"[[10]]->n [1;2]) 10 (config 0 env mem stack)) "a".
-Compute print_variable (eval_fun ("a" ::r= "b") 10 (eval_fun (Nat' "b" ::= 5) 10 (config 0 env mem stack)))"b".
-Compute print_variable (eval_fun ("List" ::l= (l->n [1;2;3;4])<op>) 10 (config 0 env mem stack )) ("List").
 
-(* Pentru a avea mai multe env primul env din config ar trebui sa fie env global, apoi cel din varful stivei sa fie env-ul curent*)
+Compute print_variable (eval_fun (Nat' "a" ::= 5) 10 (config 0 env mem stack) functionEnv) ("a").
+Compute print_variable (eval_fun (Bool "b" ::= bfalse) 10 (config 0 env mem stack) functionEnv) "b".
+Compute print_variable (eval_fun (Stringg "s" ::= sstring "ana") 10 (config 0 env mem stack) functionEnv) "s".
+Compute print_variable (eval_fun (Array'::="a"[[10]]->n [1;2]) 10 (config 0 env mem stack) functionEnv) "a".
+Compute print_variable (eval_fun ("a" ::p= "n"**) 10 (config 0 env1 mem1 [env1]) functionEnv)"a".
+Compute print_variable (eval_fun ("List" ::l= (l->n [1;2;3;4])<op>) 10 (config 0 env mem stack ) functionEnv) ("List").
 
-(* aeval --> Reserved Notation "A ` M =[ S ]=> N" (at level 30).*)
-(* beval --> Reserved Notation "B ~' M ={ S }=> B'" (at level 20). *)
-(*Inductive seval: StringExp -> Env -> MemLayer -> ErrorString -> Prop := *)
+Compute functionEnv1 "suma".
+Compute print_variable (config 0 env1 mem1 [env1]) "suma".
+Compute print_variable (eval_fun  ("suma" {{[nat_param 8]}}) 10 (config 0 env1 mem1 [env1]) functionEnv1) "sum". 
 Inductive eval : Stmt  -> Config -> Config -> FunctionEnv -> StructEnv ->Prop := 
 | e_error: forall sigma sigma' fnc str, eval (error_stmt) sigma sigma' fnc str
 | e_nat_decl: forall s i a  sigma sigma' fnc str,
@@ -939,12 +977,10 @@ Inductive eval : Stmt  -> Config -> Config -> FunctionEnv -> StructEnv ->Prop :=
     s = execute_switch i l ->
     eval s  sigma sigma' fnc str ->
     eval (switch a l)  sigma  sigma' fnc str
-| e_functionCall: forall s l stmt sigma sigma' sigma'' fnc str,
+| e_functionCall_1: forall s l stmt sigma sigma' fnc str,
     stmt = getFunctionBody sigma s ->
-    sigma' = updateConfig sigma getEmptyEnv ->
-    sigma' = addParametersToEnv sigma' s l 0 fnc->
-    eval stmt sigma' sigma'' fnc str ->
-    eval (functionCall s l) sigma sigma'' fnc str
+    eval stmt sigma sigma' fnc str -> 
+    eval (functionCall s l) sigma sigma' fnc str
 .
 
 (* Definition update_mem (mem : MemLayer) (env : Env) (x : string) (type : Mem) (v : Value) : MemLayer := *)
@@ -968,7 +1004,7 @@ Proof.
   -eapply const.
   - simpl;eauto.
 Qed.
-
+ 
 Example var_decl: eval (Nat' "n" ::= 10) (config 0 env1 mem1 [env1]) (config 1 env1 ((env1 [offset 1 /e "n"]) {"n" /m nat_value 10}\ mem1 \ (offset 1))  [env1 [offset 1 /e "n"]]) functionEnv structEnv.
 Proof.
   eapply e_nat_decl.
@@ -1014,11 +1050,11 @@ Inductive program_eval : program -> Config -> Config -> FunctionEnv -> StructEnv
    sigma' = (declare_variableGlobal sigma s (code c)) ->
    functionEnv' = update_FunctionEnv fnc s l ->
    program_eval (function s l (code c)) sigma sigma' functionEnv' str
-| p_declStruct: forall s l sigma sigma' structEnv fnc str,
+| p_declStruct: forall s l sigma  structEnv fnc str,
    structEnv = update_StructEnv str s l ->
-   program_eval (struct s l) sigma sigma' fnc structEnv
+   program_eval (struct s l) sigma sigma fnc structEnv
 | p_main : forall s sigma sigma' fnc str,
-   eval s sigma  sigma' fnc str ->
+   eval s sigma sigma' fnc str ->
    program_eval (main s) sigma sigma' fnc str.
 
 Example declarare: program_eval (Nat_gl "a" ::n= 10) (config 0 env mem stack) (config 1 (env [offset 1 /e "a"]) ((env [offset 1 /e "a"]) {"a" /m nat_value 10}\ mem \(offset 1)) [env [offset 1 /e "a"]]) functionEnv structEnv.
@@ -1037,6 +1073,7 @@ Example func: program_eval (function "suma" [naturalT "a"]
   ((env1 [offset 1 /e "suma"]) {"suma" /m
    code ("sum" :n= "sum" +' "n")}\ mem1 \ 
    (offset 1)) [env1 [offset 1 /e "suma"]]) (update_FunctionEnv functionEnv "suma" [naturalT "a"]) structEnv.
+
 Proof.
   eapply p_declFunction.
   -simpl;eauto.
@@ -1046,47 +1083,41 @@ Qed.
 
 Definition prg2 := 
   (Nat_gl "sum" ::n= 0) ;;;
-  function "suma" [naturalT "a"]
-  (
-   code(
-     "sum" :n= "sum" +' "n"
-  )
-  ) ;;;
-  (struct "pereche"
+ (struct "pereche"
   [
     member "stanga" default_nat;
     member "dreapta" default_nat
   ]);;;
+  function "main" [naturalT "a"]
+  (
+   code(
+     "sum" :n= "sum" +' "n";;
+     struct_decl "pereche" "p1"
+  )
+  ) 
+.
 
-  main (
-      "suma" {{[variable "a"]}}
-).
 
-Hint Constructors eval : my_hints.
-Hint Resolve getFunctionBody : my_hints.
-Hint Extern 1 => eapply eval.
-
-Example program1: program_eval (prg2) (config 0 env1 mem1 [env1])  (config 0 env1 mem1 [env1]) (update_FunctionEnv functionEnv "suma" [naturalT "a"]) (update_StructEnv structEnv "pereche" [
+Example program1: program_eval (prg2) (config 0 (env) mem[env])
+  (config 2 ((env [offset 1 /e "sum"]) [offset 2 /e "main"])(((env [offset 1 /e "sum"]) [offset 2 /e "main"]) {"main" /mcode ("sum" :n= "sum" +' "n";; struct_decl "pereche" "p1")}\(env [offset 1 /e "sum"]) {"sum" /m nat_value 0}\ mem \ (offset 1) \ (offset 2)) [(env [offset 1 /e "sum"]) [offset 2 /e "main"]])
+ ((update_FunctionEnv functionEnv "main" [naturalT "a"]))
+  (update_StructEnv structEnv "pereche" [
     member "stanga" default_nat;
     member "dreapta" default_nat
   ]).
 Proof.
   eapply p_seq.
   -eapply p_seq.
-    + eapply p_seq.
-      ++ eapply p_declNat.
-          +++ eapply const.
-          +++ simpl;eauto.
-      ++ eapply p_declFunction.
-          +++simpl;eauto.
-          +++eauto.
-    + eapply p_declStruct.
-      ++eauto.
-  - eapply p_main.
-    +eapply e_functionCall.
-      ++eauto.
-      ++eauto.
-      ++simpl. destruct updateConfig. eauto.
-Admitted.
+   + eapply p_declNat.
+       ++ eapply const.
+       ++ simpl;eauto.
+    +eapply p_declStruct.
+      ++simpl;eauto.
+-eapply p_declFunction.
+  +simpl;eauto. 
+  +eauto.
+Qed.
+
+
 
 

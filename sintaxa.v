@@ -337,22 +337,6 @@ Definition Value_equality (t1 : Value) (t2 : Value) : bool :=
 Check code ("a" :n= 0).
 Inductive  members :=
 | member: string -> Value -> members.
-
-Definition FunctionEnv := string -> list types.
-Definition StructEnv := string -> list members.
-Definition functionEnv : FunctionEnv :=
-  fun x => [].
-Definition structEnv : StructEnv :=
-  fun x => [].
-Definition update_FunctionEnv (fnc_env:FunctionEnv) (s:string) (l:list types) : FunctionEnv :=
- fun x => 
-     if (string_beq s x) then l
-     else (fnc_env x).
-
-Definition update_StructEnv (st_env:StructEnv) (s:string) (l:list members) :StructEnv :=
-  fun x =>
-      if (string_beq s x) then l
-      else (st_env x).
 (* Program *)
 
 Inductive program :=
